@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+server/node_modules/
+server/node_modules.zip
+
+# Build outputs
+dist/
+dist-ssr/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Playwright MCP / tooling
+.playwright-mcp/
+.commandcode/
+
+# Downloaded data (large)
+panos_descargados/
+
+# Generated data
+coordenadas_validas.json
+export.geojson

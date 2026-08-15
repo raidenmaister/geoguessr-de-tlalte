@@ -1,0 +1,27 @@
+Necesito que implementes un componente de fondo animado en los menus y dinámico con un efecto de "Mosaico de Fotos Infinita en Perspectiva 3D". Sigue minuciosamente las especificaciones de diseño, comportamiento e integración con el servidor detalladas a continuación:
+
+---
+
+### 1. DESCRIPCIÓN VISUAL DEL DISEÑO (UI)
+- **Plano Inclinado 3D**: La rejilla de imágenes debe mostrar una inclinación tridimensional pronunciada (efecto perspectivo/isométrico). Utiliza transformaciones CSS 3D (`perspective`, `rotateX`, `rotateZ`, `scale` o `transform-style: preserve-3d`) para dar la sensación de un plano inclinado hacia el fondo.
+- **Estructura de Retícula (Grid)**: Las imágenes deben organizarse en filas y columnas uniformes separadas por líneas divisorias o bordes blancos delgados y limpios.
+- **Efecto de Elevación ("Pop-Out Cards")**:
+  - Varias tarjetas de fotos individuales dentro de la rejilla deben "sobresalir" o flotar por encima del plano principal.
+  - Estas tarjetas flotantes deben tener una sombra paralela suave y definida (drop-shadow realista con z-index superior) para acentuar el volumen y la profundidad tridimensional.
+
+---
+
+### 2. COMPORTAMIENTO Y ANIMACIÓN
+- **Movimiento Continuo Infinito**: Todo el plano/rejilla de imágenes debe desplazarse de forma fluida, constante e ininterrumpida de **izquierda a derecha**.
+- **Loop Seamless**: El desplazamiento no debe mostrar saltos, parpadeos ni espacios en blanco. Debe comportarse como una cinta sin fin (marquee continuo).
+
+---
+
+### 3. INTEGRACIÓN DE SERVIDOR Y MANEJO DE DATOS
+- **Edición/Creación del Server**: Si aún no existe un endpoint en el servidor para esto, crea o modifica un endpoint backend (por ejemplo, `/api/photos` o `/api/mosaic`) que devuelva las imágenes aleatorias, ya sea el pano id).
+- **Consumo Dinámico**: El frontend debe llamar a este servidor para solicitar paquetes de fotos a medida que el mosaico avanza o se inicializa.
+- **Optimizaciones de Rendimiento**:
+  - Implementa reciclaje de elementos DOM o un canvas/virtualización eficiente para evitar fugas de memoria mientras el fondo corre indefinidamente.
+  - Usa aceleración por hardware mediante CSS (`will-change: transform`, `backface-visibility: hidden`) para mantener la animación en 60 FPS estables.
+
+---
