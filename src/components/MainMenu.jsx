@@ -1,77 +1,79 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, Users, Edit2, Wifi, Map } from 'lucide-react';
 import { conectar, SERVER_URL } from '../services/client';
 import MenuMusic from './MenuMusic';
 
-const MOSAIC_REFRESH_MS = 30000;
-const MOSAIC_CARDS_PER_GRID = 20;
-const MOSAIC_EAGER_COUNT = 10;
+const PANO_INTERVAL_MS = 20000;
+const FADE_OUT_MS = 1300;
+const FADE_HOLD_MS = 400;
 
-function fillToCount(items, count) {
-  if (items.length >= count) return items.slice(0, count);
-  const result = [];
-  for (let i = 0; i < count; i++) {
-    result.push(items[i % items.length]);
-  }
-  return result;
-}
-
-function MosaicGrid({ photos, gridId }) {
-  return (
-    <div className="menu-mosaic-grid">
-      {photos.map((source, index) => (
-        <div className={`menu-mosaic-card mosaic-card-${index % 7}`} key={`${gridId}-${index}-${source}`}>
-          <img src={source} alt="" draggable="false" loading={index < MOSAIC_EAGER_COUNT ? 'eager' : 'lazy'} />
-        </div>
-      ))}
-    </div>
-  );
+function preloadImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
 }
 
 export function MenuStreetViewBackground() {
-  const [primaryPhotos, setPrimaryPhotos] = useState([]);
-  const [duplicatePhotos, setDuplicatePhotos] = useState([]);
+  const [src, setSrc] = useState('');
+  const [fading, setFading] = useState(false);
+
+  const loadPanorama = useCallback(async () => {
+    try {
+      const response = await fetch(`${SERVER_URL}/panorama-fondo`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      return new URL(data.photo, SERVER_URL).href;
+    } catch (error) {
+      console.warn('No se pudo cargar el panorama de fondo:', error);
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
+    let swapTimer = null;
+    let blackTimer = null;
 
-    const fetchMosaic = async () => {
-      try {
-        const response = await fetch(`${SERVER_URL}/mosaic`, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const nextPhotos = Array.isArray(data) ? data : data.photos;
-        if (!mounted || !Array.isArray(nextPhotos) || nextPhotos.length === 0) return;
-        const resolved = nextPhotos.map((photo) => new URL(photo, SERVER_URL).href);
-        const half = Math.ceil(resolved.length / 2);
-        setPrimaryPhotos(fillToCount(resolved.slice(0, half), MOSAIC_CARDS_PER_GRID));
-        setDuplicatePhotos(fillToCount(resolved.slice(half), MOSAIC_CARDS_PER_GRID));
-      } catch (error) {
-        console.warn('No se pudo cargar el mosaico del menú:', error);
-      }
+    const cycle = async () => {
+      const url = await loadPanorama();
+      if (!active || !url) return;
+      const loaded = await preloadImage(url);
+      if (!active || !loaded) return;
+
+      // Fundido a negro, intercambio de imagen y aparición desde el negro.
+      setFading(true);
+      blackTimer = setTimeout(() => {
+        if (!active) return;
+        setSrc(url);
+        blackTimer = setTimeout(() => {
+          if (active) setFading(false);
+        }, FADE_HOLD_MS);
+      }, FADE_OUT_MS);
     };
 
-    fetchMosaic();
-    const refreshTimer = window.setInterval(fetchMosaic, MOSAIC_REFRESH_MS);
+    cycle();
+    swapTimer = window.setInterval(cycle, PANO_INTERVAL_MS);
     return () => {
-      mounted = false;
-      window.clearInterval(refreshTimer);
+      active = false;
+      window.clearInterval(swapTimer);
+      window.clearTimeout(blackTimer);
     };
-  }, []);
+  }, [loadPanorama]);
 
   return (
     <div className="menu-streetview" aria-hidden="true">
-      {primaryPhotos.length > 0 && (
-        <div className="menu-mosaic-viewport">
-          <div className="menu-mosaic-plane">
-            <div className="menu-mosaic-track">
-              <MosaicGrid photos={primaryPhotos} gridId="primary" />
-              <MosaicGrid photos={duplicatePhotos.length > 0 ? duplicatePhotos : primaryPhotos} gridId="duplicate" />
-            </div>
-          </div>
+      {src ? (
+        <div className="menu-pano-track">
+          <img className="menu-pano-slide" src={src} alt="" draggable="false" />
+          <img className="menu-pano-slide" src={src} alt="" draggable="false" />
         </div>
+      ) : (
+        <div className="menu-pano-placeholder" />
       )}
-      <div className={`menu-streetview-fade ${primaryPhotos.length > 0 ? '' : 'menu-streetview-black'}`} />
+      <div className={`menu-streetview-fade ${fading ? 'menu-streetview-black' : ''}`} />
       <div className="menu-streetview-shade" />
     </div>
   );

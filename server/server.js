@@ -15,7 +15,13 @@ const path = require("path");
 
 
 const PORT = process.env.PORT || 3000;
-const PANOS_DIR = path.join(__dirname, "..", "panos_descargados");
+function resolverDirectorioPanos() {
+  const layoutConSubcarpeta = path.join(__dirname, "..", "panos_descargados");
+  if (fs.existsSync(layoutConSubcarpeta)) return layoutConSubcarpeta;
+  return path.join(__dirname, "panos_descargados");
+}
+
+const PANOS_DIR = process.env.PANOS_DIR || resolverDirectorioPanos();
 const THUMBS_DIR = path.join(PANOS_DIR, "thumbs");
 const TOTAL_RONDAS_DEFAULT = 5;
 const COUNTDOWN_SECONDS = 3;
@@ -199,6 +205,22 @@ app.get("/mosaic", (req, res) => {
     console.error("❌ Error al cargar miniaturas del mosaico:", err.message);
   }
   res.json({ photos: fotos });
+});
+
+// El menú recibe un panorama 360 completo al azar para su fondo en rotación.
+app.get("/panorama-fondo", (req, res) => {
+  let fotos = [];
+  try {
+    fotos = fs.readdirSync(PANOS_DIR)
+      .filter((filename) => filename !== "thumbs" && /\.(jpe?g|png|webp)$/i.test(filename));
+  } catch (err) {
+    console.error("❌ Error al cargar panoramas de fondo:", err.message);
+  }
+  if (fotos.length === 0) {
+    return res.status(404).json({ error: "No hay panoramas descargados" });
+  }
+  const filename = fotos[Math.floor(Math.random() * fotos.length)];
+  res.json({ photo: `/panos/${encodeURIComponent(filename)}` });
 });
 
 // Compatibilidad con clientes anteriores.

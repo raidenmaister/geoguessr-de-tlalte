@@ -972,9 +972,8 @@ a[href*="google.com/maps"] {
 .menu-streetview,
 .menu-streetview-fade,
 .menu-streetview-shade,
-.menu-mosaic-viewport,
-.menu-mosaic-plane,
-.menu-mosaic-track {
+.menu-pano-track,
+.menu-pano-placeholder {
   position: absolute;
   inset: 0;
 }
@@ -983,7 +982,6 @@ a[href*="google.com/maps"] {
   z-index: 0;
   overflow: hidden;
   background: #080b07;
-  perspective: 1100px;
 }
 
 .screen-menu > .screen-card,
@@ -993,91 +991,31 @@ a[href*="google.com/maps"] {
   z-index: 1;
 }
 
-.menu-mosaic-viewport {
-  overflow: hidden;
-  perspective: 1100px;
-  perspective-origin: 50% 45%;
-}
-
-.menu-mosaic-plane {
-  width: 150vw;
-  height: 155vh;
-  top: -28vh;
-  left: -25vw;
-  transform: rotateX(58deg) rotateZ(-8deg) scale(1.28);
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-}
-
-.menu-mosaic-track {
+.menu-pano-track {
   display: flex;
   width: max-content;
   height: 100%;
-  transform: translate3d(-100vw, 0, 0);
-  animation: mosaicInfiniteDrift 38s linear infinite;
+  animation: menuPanoPan 90s linear infinite;
   will-change: transform;
   backface-visibility: hidden;
 }
 
-.menu-mosaic-grid {
+.menu-pano-slide {
   flex: 0 0 100vw;
   width: 100vw;
   height: 100%;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(140px, 1fr));
-  grid-template-rows: repeat(4, minmax(160px, 1fr));
-  gap: 4px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.75);
-  transform-style: preserve-3d;
-}
-
-.menu-mosaic-card {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  background: #25382b;
-  box-shadow: 0 10px 20px rgba(3, 8, 6, 0.25);
-  aspect-ratio: 4/3;
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-}
-
-.menu-mosaic-card img {
-  display: block;
-  width: 100%;
-  height: 100%;
   object-fit: cover;
-  filter: saturate(0.8) sepia(0.12) contrast(0.92);
   user-select: none;
-}
-
-.menu-mosaic-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(217, 207, 184, 0.16), rgba(13, 21, 18, 0.32));
   pointer-events: none;
 }
 
-.menu-mosaic-card.mosaic-card-1,
-.menu-mosaic-card.mosaic-card-4,
-.menu-mosaic-card.mosaic-card-6 {
-  transform: translateZ(48px) scale(1.035) rotateZ(-0.8deg);
-  z-index: 2;
-  box-shadow: 0 18px 28px rgba(3, 8, 6, 0.48), 0 0 0 1px rgba(255, 247, 232, 0.25);
+.menu-pano-placeholder {
+  background: radial-gradient(ellipse at 50% 35%, #1c2a1e 0%, #0a0f0a 70%, #050805 100%);
 }
 
-.menu-mosaic-card.mosaic-card-2 {
-  transform: translateZ(28px) scale(1.02) rotateZ(0.6deg);
-  z-index: 1;
-}
-
-@keyframes mosaicInfiniteDrift {
-  from { transform: translate3d(-100vw, 0, 0); }
-  to { transform: translate3d(0, 0, 0); }
+@keyframes menuPanoPan {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100vw); }
 }
 
 .menu-streetview-fade {
@@ -1102,26 +1040,8 @@ a[href*="google.com/maps"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .menu-mosaic-track {
+  .menu-pano-track {
     animation-play-state: paused;
-  }
-}
-
-/* Más columnas y filas en pantallas grandes para mantener las miniaturas nítidas */
-@media (min-width: 1600px) {
-  .menu-mosaic-grid {
-    grid-template-columns: repeat(7, 1fr);
-    grid-template-rows: repeat(5, 1fr);
-  }
-}
-
-@media (min-width: 2560px) {
-  .menu-mosaic-grid {
-    grid-template-columns: repeat(9, 1fr);
-    grid-template-rows: repeat(6, 1fr);
-  }
-  .menu-mosaic-track {
-    animation-duration: 42s;
   }
 }
 
