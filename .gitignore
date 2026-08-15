@@ -37,5 +37,4 @@ __pycache__/
 panos_descargados/
 
 # Generated data
-coordenadas_validas.json
 export.geojson
