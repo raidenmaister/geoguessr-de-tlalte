@@ -1,139 +1,140 @@
 # 🌎 GeoGuessr Explorer — Tlaltenango
 
-Multiplayer GeoGuessr-style game set in **Tlaltenango, Zacatecas, México**. Explore real Street View panoramas from the region, figure out where you are, and place your guess on the map to score points.
+Juego multijugador inspirado en GeoGuessr ambientado en **Tlaltenango, Zacatecas, México**. Explora panoramas reales de Street View de la región, descubre dónde te encuentras y coloca tu adivinanza en el mapa para sumar puntos.
 
-## ✨ Features
+## ✨ Características
 
-- **Singleplayer & Multiplayer** — play solo or create/join rooms with a 4-letter code.
-- **Public / Private rooms** — up to 10 players, configurable rounds, panic countdown and round timers.
-- **Duel mode** — 2-player matches with HP damage based on scoring difference and K.O. victory.
-- **Emotes** — in-game visual reactions during multiplayer rounds.
-- **Automatic reconnection** — pick up where you left off after a disconnect.
-- **3D photo mosaic menu** — animated, perspective photo-wall background rendered from downloaded Street View thumbnails.
-- **Fair scoring** — points awarded exponentially by real distance (Haversine), max 5000.
-- **Desktop-first** — mobile devices are blocked by design.
+- **Multijugador y solitario** — juega solo o crea/únete a salas con un código de 4 letras.
+- **Salas públicas / privadas** — hasta 10 jugadores, rondas configurables, cuenta regresiva de pánico y temporizadores por ronda.
+- **Modo duelo** — partidas de 2 jugadores con daño de HP según la diferencia de puntuación y victoria por K.O.
+- **Emotes** — reacciones visuales dentro de las partidas multijugador.
+- **Modos de visualización en solitario** — exploración libre, imagen estática e imagen rápida, configurables antes de jugar.
+- **Reconexión automática** — retoma tu partida tras una desconexión.
+- **Fondo de menú en 360°** — panorama giratorio de Street View (renderizado con la API de Google Maps) que cambia de imagen cada 20 s con fundido a negro, y se pausa al ocultar la pestaña.
+- **Puntuación justa** — puntos otorgados exponencialmente según la distancia real (Haversine), máximo 5000.
+- **Solo escritorio** — los dispositivos móviles se bloquean por diseño.
 
-## 🛠️ Tech Stack
+## 🛠️ Stack Tecnológico
 
-| Layer | Tech |
+| Capa | Tecnología |
 |---|---|
 | Frontend | React 19, Vite, Leaflet, Google Maps JS / Street View API, Socket.io-client |
 | Backend | Node.js, Express 5, Socket.io |
-| Shared logic | CommonJS scoring module (`shared/scoring.cjs`) |
-| Data scripts | Python (`streetview`), Node.js + Turf.js |
+| Lógica compartida | Módulo de puntuación CommonJS (`shared/scoring.cjs`) |
+| Scripts de datos | Python (`streetview`), Node.js + Turf.js |
 
-## 📁 Project Structure
+## 📁 Estructura del Proyecto
 
 ```
-├── src/                  # React frontend
-│   ├── components/       # UI components (menu, lobby, game, HUD, overlays)
-│   ├── services/         # Socket.io client & API calls
-│   ├── utils/            # Scoring, audio, etc.
-│   └── App.jsx           # App state machine & screen routing
+├── src/                  # Frontend React
+│   ├── components/       # Componentes UI (menú, lobby, juego, HUD, overlays)
+│   ├── services/         # Cliente Socket.io y llamadas API
+│   ├── utils/            # Puntuación, audio, etc.
+│   └── App.jsx           # Máquina de estados y enrutado de pantallas
 ├── server/
-│   ├── server.js         # Express + Socket.io multiplayer server
-│   └── coordenadas_validas.json  # Playable Street View locations
-├── shared/               # Scoring shared by client & server
-├── panos_descargados/    # Downloaded panoramas + thumbnails (served via /panos)
-├── export.geojson        # Street network used to generate locations
-├── index.cjs             # Generates valid coordinates from GeoJSON + Street View API
-├── descargar_panos.py    # Downloads panoramas/thumbnails for the menu mosaic
+│   ├── server.js         # Servidor multijugador Express + Socket.io
+│   └── coordenadas_validas.json  # Ubicaciones jugables de Street View
+├── shared/               # Puntuación compartida entre cliente y servidor
+├── panos_descargados/    # Panoramas y miniaturas descargados (servidos en /panos)
+├── export.geojson        # Red de calles usada para generar ubicaciones
+├── index.cjs             # Genera coordenadas válidas desde GeoJSON + API de Street View
 └── coordenadas_validas.json
 ```
 
-## 🚀 Getting Started
+## 🚀 Primeros Pasos
 
-### Prerequisites
+### Requisitos previos
 
 - Node.js >= 18
-- A Google Maps API Key with the **Maps JavaScript API** and **Street View** APIs enabled
+- Una API Key de Google Maps con las APIs **Maps JavaScript** y **Street View** habilitadas
 
-### 1. Configure environment variables
+### 1. Configurar variables de entorno
 
-Create a `.env` file in the project root:
+Crea un archivo `.env` en la raíz del proyecto:
 
 ```env
-VITE_GOOGLE_MAPS_API_KEY=YOUR_KEY_HERE
+VITE_GOOGLE_MAPS_API_KEY=TU_API_KEY_AQUÍ
 VITE_SERVER_URL=http://localhost:3000
 ```
 
-### 2. Install dependencies
+### 2. Instalar dependencias
 
 ```bash
 npm install
 cd server && npm install
 ```
 
-### 3. Run the backend
+### 3. Ejecutar el backend
 
 ```bash
 cd server
-npm start        # or npm run dev (auto-reload)
+npm start        # o npm run dev (recarga automática)
 ```
 
-The server runs on port `3000` by default (override with `PORT`).
+El servidor corre en el puerto `3000` por defecto (se puede cambiar con `PORT`).
 
-### 4. Run the frontend
+### 4. Ejecutar el frontend
 
 ```bash
 npm run dev
 ```
 
-Open the printed URL (`http://localhost:5173`) to start playing.
+Abre la URL que aparece en pantalla (`http://localhost:5173`) para empezar a jugar.
 
-> **Note:** the multiplayer server keeps real coordinates server-side; clients only receive `pano_id` until a round ends.
+> **Nota:** el servidor mantiene las coordenadas reales del lado del servidor; los clientes solo reciben el `pano_id` hasta que termina la ronda.
 
-## 📦 Building for production
+## 📦 Build para producción
 
 ```bash
-npm run build     # outputs to dist/
-npm run preview   # preview the production build
+npm run build     # genera el contenido en dist/
+npm run preview   # previsualiza el build de producción
 ```
 
-## 🗺️ Generating the playable location pool
+## 🗺️ Generar el conjunto de ubicaciones jugables
 
-The game needs a `coordenadas_validas.json` file with locations that have Street View coverage.
+El juego necesita un archivo `coordenadas_validas.json` con ubicaciones que tengan cobertura de Street View.
 
-1. Put your street network in `export.geojson`.
-2. Generate the valid locations (this makes API calls, so it will take a while):
+1. Coloca tu red de calles en `export.geojson`.
+2. Genera las ubicaciones válidas (hace llamadas a la API, por lo que tomará un tiempo):
 
    ```bash
    node index.cjs
    ```
 
-   This picks random points along streets and validates them against the Street View metadata API, saving up to 600 unique panoramas to `coordenadas_validas.json`.
+   Esto elige puntos aleatorios a lo largo de las calles y los valida contra la API de metadatos de Street View, guardando hasta 600 panoramas únicos en `coordenadas_validas.json`.
 
-3. (Optional) Download panoramas & thumbnails for the menu mosaic and local fallbacks:
+3. (Opcional) Descarga panoramas y miniaturas para mosaicos locales y respaldos:
 
    ```bash
    pip install streetview
    python descargar_panos.py
    ```
 
-## 📡 Server API
+## 📡 API del Servidor
 
-| Endpoint | Description |
+| Endpoint | Descripción |
 |---|---|
-| `GET /` | Health check (status + active rooms) |
-| `GET /health` | Uptime health check |
-| `GET /coordenada-aleatoria` | Random playable location |
-| `GET /panorama-aleatorio` | Legacy random `pano_id` |
-| `GET /mosaic` | Random 40 thumbnails for the menu mosaic |
-| `GET /salas-publicas` | List of open public rooms |
-| `GET /panos/*` | Static served panoramas & thumbnails |
+| `GET /` | Health check (estado + salas activas) |
+| `GET /health` | Health check de tiempo activo |
+| `GET /coordenada-aleatoria` | Ubicación jugable aleatoria |
+| `GET /panorama-aleatorio` | `pano_id` aleatorio (legado) |
+| `GET /panorama-fondo` | `pano_id` aleatorio para el fondo del menú |
+| `GET /mosaic` | 40 miniaturas aleatorias para el mosaico del menú |
+| `GET /salas-publicas` | Lista de salas públicas abiertas |
+| `GET /panos/*` | Panoramas y miniaturas servidos estáticamente |
 
-Socket.io events handle room creation/joining, reconnection, round flow, guesses and emotes.
+Los eventos de Socket.io manejan la creación/uníón de salas, la reconexión, el flujo de rondas, las adivinanzas y los emotes.
 
-## 🧪 Testing
+## 🧪 Pruebas
 
-The shared scoring module has unit tests:
+El módulo de puntuación compartido tiene pruebas unitarias:
 
 ```bash
 node shared/scoring.test.cjs
 ```
 
-## 🚧 Notes
+## 🚧 Notas
 
-- **Device gate:** the app intentionally blocks phones/tablets and shows a "desktop only" notice.
-- **Google API Key** is required to render Street View; it can be stored in `localStorage`.
-- Host connection: first player to create a room is the host and controls start / next round.
+- **Bloqueo de dispositivos:** la app bloquea a propósito los teléfonos/tabletas y muestra un aviso de "solo escritorio".
+- **API Key de Google**: se requiere para renderizar Street View; puede guardarse en `localStorage`.
+- **Host:** el primer jugador en crear una sala es el anfitrión y controla el inicio / la siguiente ronda.
