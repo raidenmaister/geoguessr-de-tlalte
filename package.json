@@ -10,7 +10,6 @@
     "build:deploy": "vite build && node deploy.mjs"
   },
   "dependencies": {
-    "@googlemaps/js-api-loader": "^2.1.1",
     "@turf/turf": "^7.3.5",
     "@vitejs/plugin-react": "^6.0.4",
     "axios": "^1.18.1",

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import StreetViewContainer from './components/StreetViewContainer';
 import FloatingControls from './components/FloatingControls';
-import ApiKeyModal from './components/ApiKeyModal';
 import CompassBar from './components/CompassBar';
 import GuessMap from './components/GuessMap';
 import ResultOverlay from './components/ResultOverlay';
@@ -60,12 +59,6 @@ function DeviceGate() {
 }
 
 function GeoGuessrApp() {
-
-  // ═══ API KEY ═══
-  const [apiKey, setApiKey] = useState(() => {
-    return import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('google_maps_api_key') || '';
-  });
-  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
 
   // ═══ USERNAME ═══
   const [username, setUsername] = useState(() => {
@@ -139,8 +132,6 @@ function GeoGuessrApp() {
   const [loadProgress, setLoadProgress] = useState({ listos: 0, total: 0 });
 
   // REFS
-  const panoramaRef = useRef(null);
-  const [panoramaInstance, setPanoramaInstance] = useState(null);
   const guessMapRef = useRef(null);
 
   // ═══════════════════════════════════════
@@ -187,23 +178,8 @@ function GeoGuessrApp() {
   }, []);
 
   // ═══════════════════════════════════════
-  //  API KEY & USERNAME
+  //  USERNAME
   // ═══════════════════════════════════════
-  useEffect(() => {
-    if (!apiKey && screen === SCREEN.PLAYING) setIsKeyModalOpen(true);
-  }, [apiKey, screen]);
-
-  const handleSaveApiKey = (newKey) => {
-    const trimmed = newKey.trim();
-    if (!trimmed || trimmed.length < 20) {
-      alert('La API Key parece inválida. Debe tener al menos 20 caracteres.');
-      return;
-    }
-    localStorage.setItem('google_maps_api_key', trimmed);
-    setApiKey(trimmed);
-    setIsKeyModalOpen(false);
-  };
-
   const handleUsernameSet = useCallback((name) => {
     localStorage.setItem('geoguessr_username', name);
     setUsername(name);
@@ -463,18 +439,16 @@ function GeoGuessrApp() {
   // ═══════════════════════════════════════
   //  PANORAMA & GUESS CALLBACKS
   // ═══════════════════════════════════════
-  const handlePanoramaLoaded = useCallback((panoramaInstance) => {
-    panoramaRef.current = panoramaInstance;
-    setPanoramaInstance(panoramaInstance);
+  const [compassHeading, setCompassHeading] = useState(0);
+  const [resetPovSignal, setResetPovSignal] = useState(0);
+
+  const handlePanoramaLoaded = useCallback(() => {
     setIsLoading(false);
     if (isMultiplayer && roomCode) socket.reportarListo(roomCode);
   }, [isMultiplayer, roomCode, socket]);
 
   const handleResetPov = useCallback(() => {
-    if (panoramaRef.current) {
-      panoramaRef.current.setPov({ heading: Math.floor(Math.random() * 360), pitch: 0 });
-      panoramaRef.current.setZoom(1);
-    }
+    setResetPovSignal((s) => s + 1);
   }, []);
 
   const handleGuessPlaced = useCallback((coords) => {
@@ -593,7 +567,6 @@ function GeoGuessrApp() {
     setCurrentCoord(coord);
     setScreen(SCREEN.PLAYING);
     setIsLoading(false);
-    if (!apiKey) setIsKeyModalOpen(true);
 
     // Imagen rápida: visible solo durante el tiempo configurado.
     setTemporalVisible(true);
@@ -607,7 +580,7 @@ function GeoGuessrApp() {
         (config.tiempoVista ?? 1) * 1000
       );
     }
-  }, [apiKey, isLoading]);
+  }, [isLoading]);
 
   const handleRematch = useCallback(async () => {
     if (isMultiplayer && roomCode) {
@@ -628,7 +601,6 @@ function GeoGuessrApp() {
     return (
       <MainMenu
         username={username}
-        apiKey={apiKey}
         onCreateRoom={() => { socket.conectar(); setScreen(SCREEN.CREATE_ROOM); }}
         onJoinRoom={() => { socket.conectar(); setScreen(SCREEN.JOIN_ROOM); }}
         onEditUsername={() => setScreen(SCREEN.USERNAME)}
@@ -650,7 +622,6 @@ function GeoGuessrApp() {
     return (
       <CreateRoom
         username={username}
-        apiKey={apiKey}
         onRoomCreated={handleRoomCreated}
         onBack={() => setScreen(SCREEN.MENU)}
       />
@@ -661,7 +632,6 @@ function GeoGuessrApp() {
     return (
       <JoinRoom
         username={username}
-        apiKey={apiKey}
         onRoomJoined={handleRoomJoined}
         onBack={() => setScreen(SCREEN.MENU)}
       />
@@ -672,7 +642,6 @@ function GeoGuessrApp() {
     return (
       <Lobby
         roomCode={roomCode}
-        apiKey={apiKey}
         players={roomPlayers}
         isHost={socket.getSocketId() === roomHostId}
          totalRondas={totalRondas}
@@ -713,7 +682,6 @@ function GeoGuessrApp() {
         <DuelsHUD players={duelPlayers} />
       ) : (
         <Header
-          onOpenKeyModal={() => setIsKeyModalOpen(true)}
           ronda={ronda}
           puntosAcumulados={puntosAcumulados}
         />
@@ -726,7 +694,7 @@ function GeoGuessrApp() {
         </div>
       )}
 
-      <CompassBar panorama={panoramaInstance} />
+      <CompassBar heading={compassHeading} />
 
       {showPreparing && isMultiplayer && (
         <div className="preparing-overlay">
@@ -741,15 +709,15 @@ function GeoGuessrApp() {
         </div>
       )}
 
-      {apiKey && currentCoord ? (
+      {currentCoord ? (
         <StreetViewContainer
-          apiKey={apiKey}
           currentCoord={currentCoord}
           viewMode={modoVista}
           panoHeading={isMultiplayer ? povHeading : soloPovHeading}
           isHidden={modoVista === 'temporal' && !temporalVisible}
-          onPanoramaLoaded={handlePanoramaLoaded}
-          onOpenKeyModal={() => setIsKeyModalOpen(true)}
+          onReady={handlePanoramaLoaded}
+          onHeadingChange={setCompassHeading}
+          resetSignal={resetPovSignal}
         />
       ) : (
         <div style={{
@@ -757,10 +725,7 @@ function GeoGuessrApp() {
           color: 'var(--text-muted)', fontSize: '1.2rem', flexDirection: 'column',
           gap: '16px', padding: '20px', textAlign: 'center'
         }}>
-          <p>Ingresa una API Key válida de Google Maps para iniciar.</p>
-          <button className="btn-primary" onClick={() => setIsKeyModalOpen(true)}>
-            Configurar API Key
-          </button>
+          <p>Cargando ubicación...</p>
         </div>
       )}
 
@@ -839,15 +804,6 @@ function GeoGuessrApp() {
             puntosAcumulados={roundResult.puntosAcumulados}
           />
         )
-      )}
-
-      {isKeyModalOpen && (
-        <ApiKeyModal
-          apiKey={apiKey}
-          isRequired={!apiKey}
-          onSave={handleSaveApiKey}
-          onClose={() => setIsKeyModalOpen(false)}
-        />
       )}
     </div>
   );

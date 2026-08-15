@@ -1,166 +1,155 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
-import { AlertTriangle, Key } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { SERVER_URL } from '../services/client';
 
-let optionsSet = false;
-
-export default function StreetViewContainer({ apiKey, currentCoord, viewMode = 'libre', panoHeading = null, isHidden = false, onPanoramaLoaded, onOpenKeyModal }) {
+export default function StreetViewContainer({
+  currentCoord,
+  viewMode = 'libre',
+  panoHeading = null,
+  isHidden = false,
+  onReady,
+  onHeadingChange,
+  resetSignal = 0,
+}) {
   const containerRef = useRef(null);
-  const panoramaRef = useRef(null);
-  const googleRef = useRef(null);
-  const viewModeRef = useRef(viewMode);
-  const panoHeadingRef = useRef(panoHeading);
-  const [loadingStatus, setLoadingStatus] = useState('Iniciando...');
+  const [heading, setHeading] = useState(() => Math.floor(Math.random() * 360));
+  const [pitch, setPitch] = useState(0);
+  const [fov, setFov] = useState(75);
+  const [imgUrl, setImgUrl] = useState(null);
+  const [status, setStatus] = useState('Iniciando...');
   const [errorMessage, setErrorMessage] = useState(null);
+  const dragRef = useRef(null);
+  const loadTimerRef = useRef(null);
+  const readyRef = useRef(false);
 
-  viewModeRef.current = viewMode;
-  panoHeadingRef.current = panoHeading;
+  const panoId = currentCoord?.pano_id;
+  const isLocked = viewMode === 'estatico';
 
+  const buildUrl = useCallback(
+    (h, p, f) => {
+      if (!panoId) return null;
+      const params = new URLSearchParams({
+        pano: panoId,
+        heading: String(Math.round(((h % 360) + 360) % 360)),
+        pitch: String(Math.round(p)),
+        fov: String(Math.round(f)),
+        w: '1280',
+        h: '640',
+      });
+      return `${SERVER_URL}/streetview?${params.toString()}`;
+    },
+    [panoId]
+  );
+
+  // Al cambiar de ronda/pano: fijar heading inicial (estático/temporal usan el del servidor).
   useEffect(() => {
-    if (!apiKey || !containerRef.current) return;
-
-    let isMounted = true;
+    const inicial =
+      (viewMode === 'estatico' || viewMode === 'temporal') && panoHeading != null
+        ? Number(panoHeading)
+        : Math.floor(Math.random() * 360);
+    setHeading(inicial);
+    setPitch(0);
+    setFov(75);
     setErrorMessage(null);
+    setStatus('Cargando panorama...');
+    readyRef.current = false;
+  }, [panoId, viewMode, panoHeading]);
 
-    async function init() {
-      try {
-        if (!optionsSet) {
-          setOptions({
-            apiKey: apiKey,
-            version: 'weekly',
-          });
-          optionsSet = true;
-        }
+  // Señal de reset (botón "restablecer vista").
+  useEffect(() => {
+    if (resetSignal === 0) return;
+    setHeading(Math.floor(Math.random() * 360));
+    setPitch(0);
+  }, [resetSignal]);
 
-        if (!googleRef.current) {
-          setLoadingStatus('Cargando API de Google Maps...');
-          const streetViewLib = await importLibrary('streetView');
-          if (!isMounted) return;
-          googleRef.current = streetViewLib;
-        }
-
-        const { StreetViewPanorama, StreetViewService, StreetViewStatus } = googleRef.current;
-
-        if (!panoramaRef.current) {
-          setLoadingStatus('Inicializando visor de Street View...');
-
-          const panorama = new StreetViewPanorama(containerRef.current, {
-            showRoadName: false,
-            showRoadLabels: false,
-            compassControl: false,
-            zoomControl: false,
-            panControl: false,
-            fullscreenControl: false,
-            addressControl: false,
-            enableCloseButton: false,
-            motionTrackingControl: false,
-            linksControl: false,
-            clickToGo: false,
-            imageDateControl: false,
-            scrollwheel: true,
-            pov: {
-              heading: Math.floor(Math.random() * 360),
-              pitch: 0,
-            },
-            zoom: 1,
-          });
-
-          panoramaRef.current = panorama;
-
-          panorama.addListener('status_changed', () => {
-            const status = panorama.getStatus();
-            if (status === StreetViewStatus.OK) {
-              setLoadingStatus('Ubicación lista');
-              setErrorMessage(null);
-              if (onPanoramaLoaded) onPanoramaLoaded(panorama);
-            } else if (status === 'ZERO_RESULTS') {
-              setLoadingStatus('Error: Sin cobertura');
-              setErrorMessage('No se encontró cobertura de Street View en esta coordenada.');
-            } else {
-              setLoadingStatus(`Error: ${status}`);
-            }
-          });
-
-          panorama.addListener('pov_changed', () => {
-            if (viewModeRef.current !== 'estatico') return;
-            const heading = Number(panoHeadingRef.current) || 0;
-            const pov = panorama.getPov();
-            if (Math.abs(pov.heading - heading) > 0.1 || Math.abs(pov.pitch) > 0.1) {
-              panorama.setPov({ heading, pitch: 0 });
-            }
-          });
-
-          panorama.addListener('zoom_changed', () => {
-            if (viewModeRef.current === 'estatico' && panorama.getZoom() !== 1) panorama.setZoom(1);
-          });
-        }
-
-        setLoadingStatus('Cargando panorama...');
-        const panorama = panoramaRef.current;
-
-        if (currentCoord?.pano_id) {
-           panorama.setPano(currentCoord.pano_id);
-           panorama.setPov({
-             heading: ['estatico', 'temporal'].includes(viewMode) && panoHeading != null ? Number(panoHeading) : Math.floor(Math.random() * 360),
-             pitch: 0,
-           });
-        } else {
-          const svService = new StreetViewService();
-          const latLng = { lat: Number(currentCoord.lat), lng: Number(currentCoord.lng) };
-
-          svService.getPanorama({ location: latLng, radius: 100 }, (data, status) => {
-            if (!isMounted) return;
-            if (status === StreetViewStatus.OK && data?.location?.pano) {
-              panorama.setPano(data.location.pano);
-            } else {
-              panorama.setPosition(latLng);
-            }
-             panorama.setPov({
-               heading: ['estatico', 'temporal'].includes(viewMode) && panoHeading != null ? Number(panoHeading) : Math.floor(Math.random() * 360),
-               pitch: 0,
-             });
-          });
-        }
-      } catch (err) {
-        console.error('Error al cargar Google Maps API:', err);
-        if (!isMounted) return;
-        setLoadingStatus('Error de API Key');
-        setErrorMessage(
-          'Error al cargar la API de Google Maps. Verifica que tu API Key sea válida y que la Street View API esté habilitada en Google Cloud Console.'
-        );
-      }
-    }
-
-    init();
-
+  // Cargar imagen con pequeño debounce para no saturar el servidor durante el arrastre.
+  useEffect(() => {
+    if (!panoId) return;
+    const url = buildUrl(heading, pitch, fov);
+    if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
+    loadTimerRef.current = setTimeout(() => setImgUrl(url), 120);
     return () => {
-      isMounted = false;
+      if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
     };
-  }, [apiKey, currentCoord, viewMode, panoHeading]);
+  }, [heading, pitch, fov, panoId, buildUrl]);
+
+  // Reportar heading para la brújula.
+  useEffect(() => {
+    onHeadingChange?.(((heading % 360) + 360) % 360);
+  }, [heading, onHeadingChange]);
+
+  const onImgLoad = useCallback(() => {
+    setStatus('Ubicación lista');
+    setErrorMessage(null);
+    if (!readyRef.current) {
+      readyRef.current = true;
+      onReady?.();
+    }
+  }, [onReady]);
+
+  const onImgError = useCallback(() => {
+    setStatus('Error: Imagen no disponible');
+    setErrorMessage('No se pudo cargar la imagen de Street View desde el servidor.');
+  }, []);
+
+  const onPointerDown = (e) => {
+    if (isLocked) return;
+    e.preventDefault();
+    dragRef.current = { x: e.clientX, y: e.clientY };
+  };
+  const onPointerMove = (e) => {
+    if (isLocked || !dragRef.current) return;
+    const dx = e.clientX - dragRef.current.x;
+    const dy = e.clientY - dragRef.current.y;
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    setHeading((h) => (h - dx * 0.3 + 360) % 360);
+    setPitch((p) => Math.max(-80, Math.min(80, p - dy * 0.3)));
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  const onWheel = (e) => {
+    if (isLocked) return;
+    e.preventDefault();
+    setFov((f) => Math.max(20, Math.min(120, f + (e.deltaY > 0 ? 6 : -6))));
+  };
 
   return (
-    <div className={`street-view-container ${isHidden ? 'street-view-hidden' : ''}`}>
-      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+    <div
+      className={`street-view-container ${isHidden ? 'street-view-hidden' : ''}`}
+      ref={containerRef}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onWheel={onWheel}
+      style={{ touchAction: isLocked ? 'auto' : 'none', cursor: isLocked ? 'default' : 'grab' }}
+    >
+      {imgUrl ? (
+        <img
+          src={imgUrl}
+          onLoad={onImgLoad}
+          onError={onImgError}
+          alt=""
+          draggable={false}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', userSelect: 'none' }}
+        />
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
+          {status}
+        </div>
+      )}
 
       {errorMessage && (
         <div className="api-error-banner">
           <AlertTriangle size={36} className="icon-danger" />
           <div>
             <h3 style={{ fontSize: '1.1rem', marginBottom: '6px', color: '#fff' }}>
-              Problema con Google Street View
+              Problema con Street View
             </h3>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
               {errorMessage}
             </p>
           </div>
-          <button
-            className="btn-primary"
-            onClick={onOpenKeyModal}
-            style={{ borderRadius: '12px', padding: '10px 18px', fontSize: '0.9rem' }}
-          >
-            <Key size={16} />
-            <span>Configurar / Cambiar API Key</span>
-          </button>
         </div>
       )}
     </div>

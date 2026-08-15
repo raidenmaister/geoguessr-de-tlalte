@@ -4,7 +4,7 @@ import { unirseSala, SERVER_URL } from '../services/client';
 import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
-export default function JoinRoom({ username, apiKey, onRoomJoined, onBack }) {
+export default function JoinRoom({ username, onRoomJoined, onBack }) {
   const [tab, setTab] = useState('public'); // 'public' | 'private'
   const [codigo, setCodigo] = useState('');
   const [loading, setLoading] = useState(false);

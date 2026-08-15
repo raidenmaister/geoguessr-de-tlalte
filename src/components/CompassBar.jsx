@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 
 const DIRECTIONS = [
   { label: 'N', deg: 0 },
@@ -31,35 +31,11 @@ const PX_PER_DEG = BAR_WIDTH_PX / 120; // show ~120° in view at a time
 // Position the strip so the center of the middle copy aligns with the viewport center
 const STRIP_LEFT_PX = -(FULL_STRIP_DEG * PX_PER_DEG - BAR_WIDTH_PX / 2);
 
-export default function CompassBar({ panorama }) {
-  const [heading, setHeading] = useState(0);
-
-  useEffect(() => {
-    if (!panorama) return;
-
-    const listener = panorama.addListener('pov_changed', () => {
-      const pov = panorama.getPov();
-      if (pov) {
-        // Normalize heading to 0-360
-        setHeading(((pov.heading % 360) + 360) % 360);
-      }
-    });
-
-    // Set initial heading
-    const pov = panorama.getPov();
-    if (pov) {
-      setHeading(((pov.heading % 360) + 360) % 360);
-    }
-
-    return () => {
-      if (listener && typeof google !== 'undefined') {
-        google.maps.event.removeListener(listener);
-      }
-    };
-  }, [panorama]);
+export default function CompassBar({ heading = 0 }) {
+  const normalized = ((Number(heading) % 360) + 360) % 360;
 
   // Calculate offset: heading 0 = center on N
-  const offset = heading * PX_PER_DEG;
+  const offset = normalized * PX_PER_DEG;
 
   return (
     <div className="compass-bar-wrapper">

@@ -3,7 +3,7 @@ import { LogOut, Play, Users, Globe, Lock, Loader2 } from 'lucide-react';
 import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
-export default function Lobby({ roomCode, players = [], isHost, totalRondas, maxJugadores, esPublica = false, apiKey, onStartGame, onLeave }) {
+export default function Lobby({ roomCode, players = [], isHost, totalRondas, maxJugadores, esPublica = false, onStartGame, onLeave }) {
   const codeChars = roomCode ? roomCode.split('') : [];
   const maxJ = maxJugadores ?? players.length;
   const isFull = players.length >= maxJ;

@@ -46,14 +46,16 @@ Juego multijugador inspirado en GeoGuessr ambientado en **Tlaltenango, Zacatecas
 ### Requisitos previos
 
 - Node.js >= 18
-- Una API Key de Google Maps con las APIs **Maps JavaScript** y **Street View** habilitadas
+- Una API Key de Google Maps con las APIs **Maps JavaScript** y **Street View Static API** habilitadas (se configura **solo en el servidor**)
 
 ### 1. Configurar variables de entorno
 
-Crea un archivo `.env` en la raíz del proyecto:
+Crea un archivo `.env` en la raíz del proyecto (y otro igual en `server/.env`):
 
 ```env
-VITE_GOOGLE_MAPS_API_KEY=TU_API_KEY_AQUÍ
+# Key usada SOLO por el backend (proxy /streetview y /panorama-fondo).
+# El frontend no contiene ninguna API Key (no hay modal ni key en el build).
+GOOGLE_MAPS_API_KEY=TU_API_KEY_AQUÍ
 VITE_SERVER_URL=http://localhost:3000
 ```
 

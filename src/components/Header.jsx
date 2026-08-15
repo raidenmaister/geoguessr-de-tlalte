@@ -1,7 +1,7 @@
 import React from 'react';
-import { Compass, MapPin, Key, Trophy } from 'lucide-react';
+import { Compass, MapPin, Trophy } from 'lucide-react';
 
-export default function Header({ onOpenKeyModal, ronda, puntosAcumulados }) {
+export default function Header({ ronda, puntosAcumulados }) {
   return (
     <header className="header-bar">
       <div className="badge-brand">
@@ -24,15 +24,6 @@ export default function Header({ onOpenKeyModal, ronda, puntosAcumulados }) {
           <Trophy size={16} className="icon-progress" />
           <span>Puntos: <strong>{puntosAcumulados.toLocaleString()}</strong></span>
         </div>
-
-        <button 
-          className="btn-secondary" 
-          onClick={onOpenKeyModal}
-          title="Configurar API Key de Google Maps"
-          aria-label="Configurar API Key"
-        >
-          <Key size={18} />
-        </button>
       </div>
     </header>
   );

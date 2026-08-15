@@ -12,9 +12,12 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+require("dotenv").config();
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 
 
 const PORT = process.env.PORT || 3000;
+const API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
 function resolverDirectorioPanos() {
   const layoutConSubcarpeta = path.join(__dirname, "..", "panos_descargados");
   if (fs.existsSync(layoutConSubcarpeta)) return layoutConSubcarpeta;
@@ -53,6 +56,8 @@ try {
   console.error("❌ Error al cargar coordenadas_validas.json:", err.message);
   process.exit(1);
 }
+
+const PANOS_VALIDOS = new Set(COORDENADAS.map((c) => c.pano_id).filter(Boolean));
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -223,6 +228,39 @@ app.get("/panorama-fondo", (req, res) => {
 app.get("/panorama-aleatorio", (req, res) => {
   const idx = Math.floor(Math.random() * COORDENADAS.length);
   res.json({ pano_id: COORDENADAS[idx].pano_id });
+});
+
+// ---------------------------------------------------------------------------
+// Proxy de imágenes Street View. El cliente pide la imagen al servidor y el
+// servidor la descarga de Google con su API Key (nunca se expone la key al navegador).
+// ---------------------------------------------------------------------------
+app.get("/streetview", async (req, res) => {
+  const pano = typeof req.query.pano === "string" ? req.query.pano.trim() : "";
+  if (!pano) return res.status(400).json({ error: "Falta pano_id" });
+  if (!PANOS_VALIDOS.has(pano)) return res.status(403).json({ error: "pano_id no autorizado" });
+
+  if (!API_KEY) return res.status(500).json({ error: "Servidor sin API Key configurada" });
+
+  const heading = Math.max(0, Math.min(360, Number(req.query.heading) || 0));
+  const pitch = Math.max(-90, Math.min(90, Number(req.query.pitch) || 0));
+  const fov = Math.max(20, Math.min(120, Number(req.query.fov) || 75));
+  const size = `${Math.min(1280, Math.max(320, Number(req.query.w) || 960))}x${Math.min(720, Math.max(240, Number(req.query.h) || 640))}`;
+
+  const url = `https://maps.googleapis.com/maps/api/streetview?size=${size}&pano=${encodeURIComponent(pano)}&heading=${heading}&pitch=${pitch}&fov=${fov}&source=outdoor&key=${API_KEY}`;
+
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: `Google Street View devolvió ${resp.status}` });
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    res.set("Content-Type", resp.headers.get("content-type") || "image/jpeg");
+    res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+    res.send(buf);
+  } catch (err) {
+    console.error("❌ Error al obtener Street View:", err.message);
+    res.status(502).json({ error: "Error al obtener Street View" });
+  }
 });
 
 app.get("/salas-publicas", (req, res) => {

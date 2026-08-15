@@ -4,7 +4,7 @@ import { crearSala } from '../services/client';
 import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
-export default function CreateRoom({ username, apiKey, onRoomCreated, onBack }) {
+export default function CreateRoom({ username, onRoomCreated, onBack }) {
   const [rondas, setRondas] = useState(5);
   const [panico, setPanico] = useState(10);
   const [duracionRonda, setDuracionRonda] = useState(0);
