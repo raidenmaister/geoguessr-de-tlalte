@@ -41,6 +41,55 @@ export function MenuStreetViewBackground() {
       }
     };
 
+    // Solo gira y cambia de imagen mientras la pestaña está visible,
+    // para no gastar llamadas a la API ni recursos cuando el usuario se ausenta.
+    const startTimers = () => {
+      if (rotationTimer) return;
+      rotationTimer = window.setInterval(() => {
+        if (!active) return;
+        headingRef.current = (headingRef.current + ROTATION_STEP_DEG) % 360;
+        panoramaRef.current?.setPov({ heading: headingRef.current, pitch: 0 });
+      }, 40);
+
+      swapTimer = window.setInterval(async () => {
+        const panoId = await loadPanoId();
+        if (!active || !panoId || document.hidden) return;
+        setFading(true);
+        fadeTimer = window.setTimeout(() => {
+          if (!active) return;
+          panoramaRef.current?.setPano(panoId);
+          fadeTimer = window.setTimeout(() => {
+            if (active) setFading(false);
+          }, FADE_IN_MS);
+        }, FADE_OUT_MS);
+      }, PANO_INTERVAL_MS);
+    };
+
+    const stopTimers = () => {
+      if (rotationTimer) {
+        window.clearInterval(rotationTimer);
+        rotationTimer = null;
+      }
+      if (swapTimer) {
+        window.clearInterval(swapTimer);
+        swapTimer = null;
+      }
+      if (fadeTimer) {
+        window.clearTimeout(fadeTimer);
+        fadeTimer = null;
+      }
+      setFading(false);
+    };
+
+    const onVisibilityChange = () => {
+      if (!active) return;
+      if (document.hidden) {
+        stopTimers();
+      } else if (panoramaRef.current) {
+        startTimers();
+      }
+    };
+
     async function init() {
       try {
         let google;
@@ -77,38 +126,19 @@ export function MenuStreetViewBackground() {
         const firstPanoId = await loadPanoId();
         if (active && firstPanoId) panorama.setPano(firstPanoId);
 
-        // Rotación continua lenta del panorama.
-        rotationTimer = window.setInterval(() => {
-          if (!active) return;
-          headingRef.current = (headingRef.current + ROTATION_STEP_DEG) % 360;
-          panoramaRef.current?.setPov({ heading: headingRef.current, pitch: 0 });
-        }, 40);
-
-        // Cambio de imagen cada 20s con fundido a negro.
-        swapTimer = window.setInterval(async () => {
-          const panoId = await loadPanoId();
-          if (!active || !panoId) return;
-          setFading(true);
-          fadeTimer = window.setTimeout(() => {
-            if (!active) return;
-            panoramaRef.current?.setPano(panoId);
-            fadeTimer = window.setTimeout(() => {
-              if (active) setFading(false);
-            }, FADE_IN_MS);
-          }, FADE_OUT_MS);
-        }, PANO_INTERVAL_MS);
+        if (!document.hidden && active) startTimers();
       } catch (err) {
         console.error('Error al cargar la API de Google Maps para el fondo:', err);
       }
     }
 
     init();
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       active = false;
-      window.clearInterval(rotationTimer);
-      window.clearInterval(swapTimer);
-      window.clearTimeout(fadeTimer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      stopTimers();
     };
   }, []);
 
@@ -150,39 +180,41 @@ export default function MainMenu({ username, apiKey, onCreateRoom, onJoinRoom, o
           </button>
         </div>
 
-        <div className="menu-kicker">CUADERNO DE CAMPO · TLALTENANGO</div>
-        <h1 className="screen-title">Elige tu ruta</h1>
-        <p className="screen-subtitle">Explora, ubica y demuestra tu orientación.</p>
+        <div className="menu-logo" aria-hidden="true">🌎</div>
+        <div className="menu-kicker">
+          <span className="menu-flag" aria-hidden="true">🇲🇽</span> Tlaltenango, Zacatecas
+        </div>
+        <p className="screen-subtitle">Explora lugares reales y adivina dónde estás.</p>
         
         <div className="menu-options">
           <button onClick={onCreateRoom} className="btn-menu-card">
             <Plus size={32} />
             <div className="menu-card-content">
-              <h3>Marcar territorio</h3>
-              <p>Prepara una expedición multijugador</p>
+              <h3>Crear sala</h3>
+              <p>Modo multijugador</p>
             </div>
           </button>
 
           <button onClick={onJoinRoom} className="btn-menu-card">
             <Users size={32} />
             <div className="menu-card-content">
-              <h3>Seguir una ruta</h3>
-              <p>Únete a la expedición de un amigo</p>
+              <h3>Unirse a una partida</h3>
+              <p>Multijugador</p>
             </div>
           </button>
 
           <button onClick={onSinglePlayer} className="btn-menu-card solo">
             <Map size={32} />
             <div className="menu-card-content">
-              <h3>Explorar por cuenta propia</h3>
-              <p>Practica tu orientación sin compañía</p>
+              <h3>Jugar en solitario</h3>
+              <p>Modo un jugador</p>
             </div>
           </button>
         </div>
 
         <div className="connection-status">
           <Wifi size={14} className={isConnected ? "text-success" : "text-error"} />
-          <span>{isConnected ? 'Conectado al servidor' : 'Sin conexión — modo solo disponible'}</span>
+          <span>{isConnected ? 'En línea' : 'Sin conexión'}</span>
         </div>
       </div>
     </div>

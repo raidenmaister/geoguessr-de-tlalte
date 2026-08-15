@@ -51,7 +51,7 @@ export default function CreateRoom({ username, apiKey, onRoomCreated, onBack }) 
           <ArrowLeft size={20} /> Volver
         </button>
 
-        <h1 className="screen-title">Configurar Partida</h1>
+        <h1 className="screen-title">Crear partida</h1>
 
         {error && <div className="error-message">{error}</div>}
 

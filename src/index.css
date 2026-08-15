@@ -1299,6 +1299,13 @@ a[href*="google.com/maps"] {
   color: var(--text-muted);
 }
 
+.config-hint {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+}
+
 .config-options {
   display: flex;
   gap: 8px;
@@ -2993,6 +3000,19 @@ a[href*="google.com/maps"] {
 }
 
 /* Identidad cartográfica: superficies, jerarquía y roles semánticos */
+.menu-logo {
+  font-size: 4.2rem;
+  line-height: 1;
+  text-align: center;
+  margin: 0 0 6px;
+  filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.55));
+}
+
+.menu-flag {
+  font-size: 1rem;
+  vertical-align: -0.1em;
+}
+
 .menu-kicker {
   color: var(--accent-amber);
   font-family: var(--font-mono);

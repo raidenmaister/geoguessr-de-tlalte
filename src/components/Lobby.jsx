@@ -42,7 +42,7 @@ export default function Lobby({ roomCode, players = [], isHost, totalRondas, max
                 </div>
               ))}
             </div>
-            <p className="screen-subtitle">Comparte este código con tus amigos para ingresar</p>
+            <p className="screen-subtitle">Comparte este código con tus amigos para unirse</p>
           </div>
         ) : (
           /* SI ES PÚBLICA: MOSTRAR BANNER DE BÚSQUEDA PÚBLICA */

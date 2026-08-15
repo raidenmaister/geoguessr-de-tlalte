@@ -60,7 +60,7 @@ export default function JoinRoom({ username, apiKey, onRoomJoined, onBack }) {
           <ArrowLeft size={20} /> Volver
         </button>
 
-        <h1 className="screen-title">Unirse a Partida</h1>
+        <h1 className="screen-title">Unirse a una partida</h1>
 
         {error && <div className="error-message">{error}</div>}
 
@@ -131,7 +131,7 @@ export default function JoinRoom({ username, apiKey, onRoomJoined, onBack }) {
         {/* TAB 2: SALA PRIVADA POR CÓDIGO */}
         {tab === 'private' && (
           <div className="private-room-section">
-          <p className="screen-subtitle">Ingresa el código de 4 letras proporcionado por el host:</p>
+          <p className="screen-subtitle">Ingresa el código de 4 letras del anfitrión:</p>
           <div className="code-input-container">
             <label className="config-label" htmlFor="room-code">Código de sala</label>
             <input

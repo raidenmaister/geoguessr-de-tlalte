@@ -18,6 +18,7 @@ import DuelsHUD from './components/DuelsHUD';
 import EmotePicker from './components/EmotePicker';
 import EmoteOverlay from './components/EmoteOverlay';
 import DesktopOnlyNotice from './components/DesktopOnlyNotice';
+import SoloSetup from './components/SoloSetup';
 import * as socket from './services/client';
 import { Send, Clock } from 'lucide-react';
 import { haversineDistance, calcularPuntos } from './utils/scoring';
@@ -33,6 +34,7 @@ const SCREEN = {
   PLAYING: 'PLAYING',
   RESULT: 'RESULT',
   GAME_OVER: 'GAME_OVER',
+  SOLO_SETUP: 'SOLO_SETUP',
 };
 
 function DeviceGate() {
@@ -85,6 +87,7 @@ function GeoGuessrApp() {
   const [modoVista, setModoVista] = useState('libre');
   const [tiempoVista, setTiempoVista] = useState(1);
   const [povHeading, setPovHeading] = useState(null);
+  const [soloPovHeading, setSoloPovHeading] = useState(() => Math.floor(Math.random() * 360));
   const [temporalVisible, setTemporalVisible] = useState(true);
   const temporalTimerRef = useRef(null);
 
@@ -551,19 +554,39 @@ function GeoGuessrApp() {
       setGuessCoords(null);
       setMapExpanded(false);
       setYaAdivine(false);
+      setSoloPovHeading(Math.floor(Math.random() * 360));
       if (guessMapRef.current) guessMapRef.current.clearMarker();
       setScreen(SCREEN.PLAYING);
       setTimeout(() => setIsLoading(false), 400);
-    }
-  }, [isMultiplayer, roomCode, ronda, totalRondas, username, puntosAcumulados, singleplayerHistory, socket]);
 
-  const handleStartSinglePlayer = useCallback(async () => {
+      // Imagen rápida: reiniciar el contador de visibilidad en cada ronda.
+      setTemporalVisible(true);
+      if (temporalTimerRef.current) {
+        clearTimeout(temporalTimerRef.current);
+        temporalTimerRef.current = null;
+      }
+      if (modoVista === 'temporal') {
+        temporalTimerRef.current = setTimeout(
+          () => setTemporalVisible(false),
+          tiempoVista * 1000
+        );
+      }
+    }
+  }, [isMultiplayer, roomCode, ronda, totalRondas, username, puntosAcumulados, singleplayerHistory, socket, modoVista, tiempoVista]);
+
+  const handleStartSinglePlayer = useCallback(async (config = {}) => {
     if (isLoading) return;
     setIsMultiplayer(false);
     setRonda(1);
-    setTotalRondas(5);
+    setTotalRondas(config.totalRondas || 5);
     setPuntosAcumulados(0);
     setSingleplayerHistory([]);
+    setModoVista(config.modoVista || 'libre');
+    setTiempoVista(config.tiempoVista ?? 1);
+    setSoloPovHeading(Math.floor(Math.random() * 360));
+    setGuessCoords(null);
+    setYaAdivine(false);
+    setRoundResult(null);
     setIsLoading(true);
 
     const coord = await fetchRandomCoord();
@@ -571,6 +594,19 @@ function GeoGuessrApp() {
     setScreen(SCREEN.PLAYING);
     setIsLoading(false);
     if (!apiKey) setIsKeyModalOpen(true);
+
+    // Imagen rápida: visible solo durante el tiempo configurado.
+    setTemporalVisible(true);
+    if (temporalTimerRef.current) {
+      clearTimeout(temporalTimerRef.current);
+      temporalTimerRef.current = null;
+    }
+    if ((config.modoVista || 'libre') === 'temporal') {
+      temporalTimerRef.current = setTimeout(
+        () => setTemporalVisible(false),
+        (config.tiempoVista ?? 1) * 1000
+      );
+    }
   }, [apiKey, isLoading]);
 
   const handleRematch = useCallback(async () => {
@@ -596,7 +632,16 @@ function GeoGuessrApp() {
         onCreateRoom={() => { socket.conectar(); setScreen(SCREEN.CREATE_ROOM); }}
         onJoinRoom={() => { socket.conectar(); setScreen(SCREEN.JOIN_ROOM); }}
         onEditUsername={() => setScreen(SCREEN.USERNAME)}
-        onSinglePlayer={handleStartSinglePlayer}
+        onSinglePlayer={() => setScreen(SCREEN.SOLO_SETUP)}
+      />
+    );
+  }
+
+  if (screen === SCREEN.SOLO_SETUP) {
+    return (
+      <SoloSetup
+        onStart={handleStartSinglePlayer}
+        onBack={() => setScreen(SCREEN.MENU)}
       />
     );
   }
@@ -700,9 +745,9 @@ function GeoGuessrApp() {
         <StreetViewContainer
           apiKey={apiKey}
           currentCoord={currentCoord}
-          viewMode={isMultiplayer ? modoVista : 'libre'}
-          panoHeading={povHeading}
-          isHidden={isMultiplayer && modoVista === 'temporal' && !temporalVisible}
+          viewMode={modoVista}
+          panoHeading={isMultiplayer ? povHeading : soloPovHeading}
+          isHidden={modoVista === 'temporal' && !temporalVisible}
           onPanoramaLoaded={handlePanoramaLoaded}
           onOpenKeyModal={() => setIsKeyModalOpen(true)}
         />
