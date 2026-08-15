@@ -972,7 +972,7 @@ a[href*="google.com/maps"] {
 .menu-streetview,
 .menu-streetview-fade,
 .menu-streetview-shade,
-.menu-pano-track,
+.menu-pano-canvas,
 .menu-pano-placeholder {
   position: absolute;
   inset: 0;
@@ -991,31 +991,13 @@ a[href*="google.com/maps"] {
   z-index: 1;
 }
 
-.menu-pano-track {
-  display: flex;
-  width: max-content;
-  height: 100%;
-  animation: menuPanoPan 90s linear infinite;
-  will-change: transform;
-  backface-visibility: hidden;
-}
-
-.menu-pano-slide {
-  flex: 0 0 100vw;
-  width: 100vw;
-  height: 100%;
-  object-fit: cover;
-  user-select: none;
+.menu-pano-canvas {
   pointer-events: none;
 }
 
 .menu-pano-placeholder {
+  pointer-events: none;
   background: radial-gradient(ellipse at 50% 35%, #1c2a1e 0%, #0a0f0a 70%, #050805 100%);
-}
-
-@keyframes menuPanoPan {
-  from { transform: translateX(0); }
-  to { transform: translateX(-100vw); }
 }
 
 .menu-streetview-fade {
@@ -1037,12 +1019,6 @@ a[href*="google.com/maps"] {
   background: linear-gradient(180deg, rgba(5, 9, 4, 0.26), rgba(5, 8, 4, 0.82)),
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 4px);
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .menu-pano-track {
-    animation-play-state: paused;
-  }
 }
 
 /* Tarjeta central (Glassmorphism) */

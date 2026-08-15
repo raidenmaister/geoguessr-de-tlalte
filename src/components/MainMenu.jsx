@@ -1,78 +1,121 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, Users, Edit2, Wifi, Map } from 'lucide-react';
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { conectar, SERVER_URL } from '../services/client';
 import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
 const FADE_OUT_MS = 1300;
-const FADE_HOLD_MS = 400;
+const FADE_IN_MS = 700;
+const ROTATION_STEP_DEG = 0.08; // ~2°/s → vuelta completa en ~3 min
 
-function preloadImage(url) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve(true);
-    img.onerror = () => resolve(false);
-    img.src = url;
-  });
+function getApiKey() {
+  return import.meta.env.VITE_GOOGLE_MAPS_API_KEY || localStorage.getItem('google_maps_api_key') || '';
 }
 
 export function MenuStreetViewBackground() {
-  const [src, setSrc] = useState('');
+  const canvasRef = useRef(null);
+  const panoramaRef = useRef(null);
+  const headingRef = useRef(0);
   const [fading, setFading] = useState(false);
-
-  const loadPanorama = useCallback(async () => {
-    try {
-      const response = await fetch(`${SERVER_URL}/panorama-fondo`, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      return new URL(data.photo, SERVER_URL).href;
-    } catch (error) {
-      console.warn('No se pudo cargar el panorama de fondo:', error);
-      return null;
-    }
-  }, []);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    const apiKey = getApiKey();
+    if (!apiKey || !canvasRef.current) return;
+
     let active = true;
+    let rotationTimer = null;
     let swapTimer = null;
-    let blackTimer = null;
+    let fadeTimer = null;
 
-    const cycle = async () => {
-      const url = await loadPanorama();
-      if (!active || !url) return;
-      const loaded = await preloadImage(url);
-      if (!active || !loaded) return;
-
-      // Fundido a negro, intercambio de imagen y aparición desde el negro.
-      setFading(true);
-      blackTimer = setTimeout(() => {
-        if (!active) return;
-        setSrc(url);
-        blackTimer = setTimeout(() => {
-          if (active) setFading(false);
-        }, FADE_HOLD_MS);
-      }, FADE_OUT_MS);
+    const loadPanoId = async () => {
+      try {
+        const response = await fetch(`${SERVER_URL}/panorama-fondo`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        return data.pano_id;
+      } catch (error) {
+        console.warn('No se pudo cargar el pano de fondo:', error);
+        return null;
+      }
     };
 
-    cycle();
-    swapTimer = window.setInterval(cycle, PANO_INTERVAL_MS);
+    async function init() {
+      try {
+        let google;
+        if (window.google?.maps?.StreetViewPanorama) {
+          google = window.google.maps;
+        } else {
+          setOptions({ apiKey, version: 'weekly' });
+          google = await importLibrary('streetView');
+          if (!active) return;
+        }
+
+        const { StreetViewPanorama } = google;
+        const panorama = new StreetViewPanorama(canvasRef.current, {
+          disableDefaultUI: true,
+          showRoadName: false,
+          showRoadLabels: false,
+          compassControl: false,
+          zoomControl: false,
+          panControl: false,
+          fullscreenControl: false,
+          addressControl: false,
+          enableCloseButton: false,
+          motionTrackingControl: false,
+          linksControl: false,
+          clickToGo: false,
+          scrollwheel: false,
+          pov: { heading: headingRef.current, pitch: 0 },
+          zoom: 1,
+        });
+        panoramaRef.current = panorama;
+        if (!active) return;
+        setReady(true);
+
+        const firstPanoId = await loadPanoId();
+        if (active && firstPanoId) panorama.setPano(firstPanoId);
+
+        // Rotación continua lenta del panorama.
+        rotationTimer = window.setInterval(() => {
+          if (!active) return;
+          headingRef.current = (headingRef.current + ROTATION_STEP_DEG) % 360;
+          panoramaRef.current?.setPov({ heading: headingRef.current, pitch: 0 });
+        }, 40);
+
+        // Cambio de imagen cada 20s con fundido a negro.
+        swapTimer = window.setInterval(async () => {
+          const panoId = await loadPanoId();
+          if (!active || !panoId) return;
+          setFading(true);
+          fadeTimer = window.setTimeout(() => {
+            if (!active) return;
+            panoramaRef.current?.setPano(panoId);
+            fadeTimer = window.setTimeout(() => {
+              if (active) setFading(false);
+            }, FADE_IN_MS);
+          }, FADE_OUT_MS);
+        }, PANO_INTERVAL_MS);
+      } catch (err) {
+        console.error('Error al cargar la API de Google Maps para el fondo:', err);
+      }
+    }
+
+    init();
+
     return () => {
       active = false;
+      window.clearInterval(rotationTimer);
       window.clearInterval(swapTimer);
-      window.clearTimeout(blackTimer);
+      window.clearTimeout(fadeTimer);
     };
-  }, [loadPanorama]);
+  }, []);
 
   return (
     <div className="menu-streetview" aria-hidden="true">
-      {src ? (
-        <div className="menu-pano-track">
-          <img className="menu-pano-slide" src={src} alt="" draggable="false" />
-          <img className="menu-pano-slide" src={src} alt="" draggable="false" />
-        </div>
-      ) : (
-        <div className="menu-pano-placeholder" />
-      )}
+      <div ref={canvasRef} className="menu-pano-canvas" />
+      {!ready && <div className="menu-pano-placeholder" />}
       <div className={`menu-streetview-fade ${fading ? 'menu-streetview-black' : ''}`} />
       <div className="menu-streetview-shade" />
     </div>

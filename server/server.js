@@ -207,20 +207,16 @@ app.get("/mosaic", (req, res) => {
   res.json({ photos: fotos });
 });
 
-// El menú recibe un panorama 360 completo al azar para su fondo en rotación.
+// El menú recibe un pano_id al azar; el cliente lo renderiza con la Street View API de Google Maps.
 app.get("/panorama-fondo", (req, res) => {
-  let fotos = [];
-  try {
-    fotos = fs.readdirSync(PANOS_DIR)
-      .filter((filename) => filename !== "thumbs" && /\.(jpe?g|png|webp)$/i.test(filename));
-  } catch (err) {
-    console.error("❌ Error al cargar panoramas de fondo:", err.message);
+  if (COORDENADAS.length === 0) {
+    return res.status(404).json({ error: "No hay coordenadas cargadas" });
   }
-  if (fotos.length === 0) {
-    return res.status(404).json({ error: "No hay panoramas descargados" });
+  const pano_id = COORDENADAS[Math.floor(Math.random() * COORDENADAS.length)].pano_id;
+  if (!pano_id) {
+    return res.status(404).json({ error: "Sin pano_id disponible" });
   }
-  const filename = fotos[Math.floor(Math.random() * fotos.length)];
-  res.json({ photo: `/panos/${encodeURIComponent(filename)}` });
+  res.json({ pano_id });
 });
 
 // Compatibilidad con clientes anteriores.
