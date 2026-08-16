@@ -6,11 +6,15 @@ import MenuMusic from './MenuMusic';
 const PANO_INTERVAL_MS = 20000;
 // Cambia este valor para acelerar o ralentizar el giro suave del mismo panorama.
 const BACKGROUND_ROTATION_DEGREES_PER_SECOND = 6;
-const PANO_TILE_ZOOM_LARGE = 4;
-const PANO_TILE_ZOOM_SMALL = 3;
+// Zoom 3 is 32 tiles instead of 128 at zoom 4, with enough detail for the menu.
+const PANO_TILE_ZOOM_LARGE = 3;
+const PANO_TILE_ZOOM_SMALL = 2;
 const PANO_TILE_SIZE = 512;
 const PANO_FOV_DEG = 100;
 const BACKGROUND_CROSSFADE_DURATION_MS = 900;
+const TOKEN_PARAM = import.meta.env.VITE_STREETVIEW_TOKEN
+  ? `&token=${encodeURIComponent(import.meta.env.VITE_STREETVIEW_TOKEN)}`
+  : '';
 
 function getCanvasResolution() {
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
@@ -37,7 +41,9 @@ export function MenuStreetViewBackground() {
       panoId: null,
       panorama: null,
       heading: Math.random() * 360,
-      paused: document.hidden || !document.hasFocus(),
+      // El fondo debe cargar aunque la pestaña todavía no haya reportado foco.
+      // Los eventos blur/visibilitychange se encargan de pausarlo después.
+      paused: document.hidden,
       loadingPano: false,
       frameId: null,
       lastFrameTime: 0,
@@ -93,7 +99,7 @@ export function MenuStreetViewBackground() {
           tiles.push({
             x,
             y,
-            url: `${SERVER_URL}/streetview-tile?pano=${encodeURIComponent(panoId)}&x=${x}&y=${y}&zoom=${zoom}`,
+            url: `${SERVER_URL}/streetview-tile?pano=${encodeURIComponent(panoId)}&x=${x}&y=${y}&zoom=${zoom}${TOKEN_PARAM}`,
           });
         }
       }
@@ -115,7 +121,7 @@ export function MenuStreetViewBackground() {
       const width = Math.min(2048, Math.max(1280, resolution.width));
       const height = Math.min(1152, Math.max(720, Math.ceil(width * resolution.height / resolution.width)));
       const image = await loadTile(
-        `${SERVER_URL}/streetview?pano=${encodeURIComponent(panoId)}&heading=0&pitch=0&fov=${PANO_FOV_DEG}&w=${width}&h=${height}`,
+        `${SERVER_URL}/streetview?pano=${encodeURIComponent(panoId)}&heading=0&pitch=0&fov=${PANO_FOV_DEG}&w=${width}&h=${height}${TOKEN_PARAM}`,
         signal,
       );
       const canvas = document.createElement('canvas');

@@ -15,10 +15,20 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+const crypto = require("crypto");
 
 
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+// Clave de firma digital de URL (Google Cloud Console -> Credenciales -> Clave de URL).
+// Si se define, el proxy firma cada petición a la Static API (HMAC-SHA1 base64url).
+const URL_SIGNING_SECRET = process.env.GOOGLE_MAPS_URL_SIGNING_SECRET || "";
+// Token opcional para restringir acceso al proxy. Si se define, el cliente debe
+// mandarlo como query param `token=` (StreetViewContainer y MainMenu lo leen de VITE_STREETVIEW_TOKEN).
+const STREETVIEW_ACCESS_TOKEN = process.env.STREETVIEW_ACCESS_TOKEN || "";
+const STREETVIEW_TIMEOUT_MS = 8000;
+const STREETVIEW_MAX_BYTES = 3 * 1024 * 1024; // 3 MB
+const MAX_PETICIONES_CONCURRENTES = 8;
 function resolverDirectorioPanos() {
   const layoutConSubcarpeta = path.join(__dirname, "..", "panos_descargados");
   if (fs.existsSync(layoutConSubcarpeta)) return layoutConSubcarpeta;
@@ -84,6 +94,145 @@ function descargarTileConHttps(url) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Utilidades del proxy Street View
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Firma digital de URL para la Static API (HMAC-SHA1 base64url). Se firma la URL
+// completa sin la firma; Google la exige para algunos planes. Si no hay secreto
+// configurado, se devuelve la URL sin modificar.
+function firmarUrl(url) {
+  if (!URL_SIGNING_SECRET) return url;
+  const clave = Buffer.from(URL_SIGNING_SECRET.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  const firma = crypto
+    .createHmac("sha1", clave)
+    .update(url)
+    .digest("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+  return `${url}&signature=${firma}`;
+}
+
+// Descarga con timeout (AbortSignal.timeout) y tope de tamaño. Limita la memoria
+// leyendo la respuesta por tramos y abortando al exceder STREETVIEW_MAX_BYTES.
+async function descargarConLimites(url, timeoutMs = STREETVIEW_TIMEOUT_MS, maxBytes = STREETVIEW_MAX_BYTES) {
+  const resp = await fetch(url, {
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "Referer": "https://www.google.com/",
+      "User-Agent": "Mozilla/5.0",
+    },
+  });
+  if (!resp.ok) return { error: resp.status };
+
+  const contentLength = Number(resp.headers.get("content-length")) || 0;
+  if (contentLength > maxBytes) {
+    await resp.body?.cancel();
+    return { error: 413 };
+  }
+
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of resp.body) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      await resp.body?.cancel();
+      return { error: 413 };
+    }
+    chunks.push(Buffer.from(chunk));
+  }
+  return { buffer: Buffer.concat(chunks), contentType: resp.headers.get("content-type") || "image/jpeg" };
+}
+
+// Semáforo simple para limitar peticiones concurrentes a Google.
+let peticionesActivas = 0;
+const colaPeticiones = [];
+async function conLimiteConcurrencia(tarea) {
+  if (peticionesActivas < MAX_PETICIONES_CONCURRENTES) {
+    peticionesActivas++;
+    try {
+      return await tarea();
+    } finally {
+      peticionesActivas--;
+      despacharCola();
+    }
+  }
+  return new Promise((resolve, reject) => {
+    colaPeticiones.push({ tarea, resolve, reject });
+  });
+}
+function despacharCola() {
+  while (peticionesActivas < MAX_PETICIONES_CONCURRENTES && colaPeticiones.length > 0) {
+    const { tarea, resolve, reject } = colaPeticiones.shift();
+    peticionesActivas++;
+    tarea().then(resolve, reject).finally(() => {
+      peticionesActivas--;
+      despacharCola();
+    });
+  }
+}
+
+// Rate limiting en memoria por IP (ventana deslizante).
+const rateLimitMap = new Map(); // ip -> { cuenta, resetAt }
+function rateLimitMiddleware(limite, ventanaMs) {
+  return (req, res, next) => {
+    const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.socket?.remoteAddress || "unknown";
+    const ahora = Date.now();
+    const datos = rateLimitMap.get(ip) || { cuenta: 0, resetAt: ahora + ventanaMs };
+    if (ahora > datos.resetAt) {
+      datos.cuenta = 0;
+      datos.resetAt = ahora + ventanaMs;
+    }
+    datos.cuenta++;
+    rateLimitMap.set(ip, datos);
+    if (datos.cuenta > limite) {
+      return res.status(429).json({ error: "Demasiadas peticiones. Intenta de nuevo en un momento." });
+    }
+    next();
+  };
+}
+setInterval(() => {
+  const ahora = Date.now();
+  for (const [ip, datos] of rateLimitMap) {
+    if (ahora > datos.resetAt) rateLimitMap.delete(ip);
+  }
+}, 60 * 1000);
+
+// Valida que la petición al proxy traiga el token de acceso si está configurado.
+function middlewareTokenProxy(req, res, next) {
+  if (!STREETVIEW_ACCESS_TOKEN) return next();
+  if (req.query.token === STREETVIEW_ACCESS_TOKEN) return next();
+  return res.status(403).json({ error: "Acceso restringido" });
+}
+
+// Cache de panos conocidos como inválidos/caducados (Google puede retirarlos).
+const PANOS_CADUCADOS = new Set();
+function marcarPanoCaducado(panoId) {
+  if (!panoId) return;
+  PANOS_CADUCADOS.add(panoId);
+  console.warn(`⚠️ Panorama marcado como caducado: ${panoId}`);
+}
+
+// Valida que un pano siga existiendo con la Metadata API de Street View.
+// No bloquea el juego si la API falla o no hay API key: asume válido.
+async function validarPano(panoId) {
+  if (PANOS_CADUCADOS.has(panoId)) return false;
+  if (!API_KEY) return true;
+  const url = `https://maps.googleapis.com/maps/api/streetview/metadata?pano=${encodeURIComponent(panoId)}&key=${API_KEY}`;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (!resp.ok) return true;
+    const data = await resp.json();
+    if (data && data.status === "OK") return true;
+    marcarPanoCaducado(panoId);
+    return false;
+  } catch {
+    return true; // error de red/API: no castigar al pano
+  }
+}
+
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -144,7 +293,7 @@ function generarCodigo() {
 }
 
 function generarToken() {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  return crypto.randomBytes(32).toString("hex");
 }
 
 function asignarColor(sala) {
@@ -154,16 +303,38 @@ function asignarColor(sala) {
   return disponible || COLORES_MARCADOR[sala.jugadores.size % COLORES_MARCADOR.length];
 }
 
-function seleccionarCoordenada(sala) {
-  if (sala.indicesUsados.size >= COORDENADAS.length) {
+// Cache de validación: pano_id -> true/false (evita repetir llamadas a la Metadata API).
+const cacheValidacion = new Map();
+
+async function seleccionarCoordenada(sala) {
+  const candidatas = COORDENADAS.map((c, i) => ({ c, i }))
+    .filter(({ c }) => !PANOS_CADUCADOS.has(c.pano_id));
+  const pool = candidatas.length > 0 ? candidatas : COORDENADAS.map((c, i) => ({ c, i }));
+  if (sala.indicesUsados.size >= pool.length) {
     sala.indicesUsados.clear();
   }
-  let idx;
-  do {
-    idx = Math.floor(Math.random() * COORDENADAS.length);
-  } while (sala.indicesUsados.has(idx));
-  sala.indicesUsados.add(idx);
-  return COORDENADAS[idx];
+
+  const desordenado = [...pool].sort(() => Math.random() - 0.5);
+  for (let intento = 0; intento < Math.min(desordenado.length, 12); intento++) {
+    const { c, i } = desordenado[intento];
+    if (sala.indicesUsados.has(i) && intento < desordenado.length - 1) continue;
+
+    let valido = cacheValidacion.get(c.pano_id);
+    if (valido === undefined) {
+      valido = await validarPano(c.pano_id);
+      cacheValidacion.set(c.pano_id, valido);
+      if (cacheValidacion.size > 500) cacheValidacion.clear();
+    }
+    if (valido) {
+      sala.indicesUsados.add(i);
+      return c;
+    }
+  }
+
+  // Último recurso: devolver una candidata aunque no esté validada (evita bloquear la partida).
+  const fallback = pool[Math.floor(Math.random() * pool.length)];
+  sala.indicesUsados.add(fallback.i);
+  return fallback.c;
 }
 
 // Street View necesita el pano_id en el navegador, pero las coordenadas reales
@@ -218,8 +389,9 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/coordenada-aleatoria", (req, res) => {
-  const idx = Math.floor(Math.random() * COORDENADAS.length);
-  res.json(COORDENADAS[idx]);
+  const validas = COORDENADAS.filter((c) => !PANOS_CADUCADOS.has(c.pano_id));
+  const pool = validas.length > 0 ? validas : COORDENADAS;
+  res.json(pool[Math.floor(Math.random() * pool.length)]);
 });
 
 // El menú recibe un paquete pequeño de miniaturas locales para construir su mosaico.
@@ -239,10 +411,12 @@ app.get("/mosaic", (req, res) => {
 
 // El menú recibe un pano_id al azar; el cliente lo renderiza con la Street View API de Google Maps.
 app.get("/panorama-fondo", (req, res) => {
-  if (COORDENADAS.length === 0) {
+  const validas = COORDENADAS.filter((c) => !PANOS_CADUCADOS.has(c.pano_id));
+  const pool = validas.length > 0 ? validas : COORDENADAS;
+  if (pool.length === 0) {
     return res.status(404).json({ error: "No hay coordenadas cargadas" });
   }
-  const pano_id = COORDENADAS[Math.floor(Math.random() * COORDENADAS.length)].pano_id;
+  const pano_id = pool[Math.floor(Math.random() * pool.length)].pano_id;
   if (!pano_id) {
     return res.status(404).json({ error: "Sin pano_id disponible" });
   }
@@ -251,7 +425,10 @@ app.get("/panorama-fondo", (req, res) => {
 
 // Proxy de tiles equirectangulares para que el cliente pueda girar un mismo
 // panorama localmente sin solicitar una nueva perspectiva en cada frame.
-app.get("/streetview-tile", async (req, res) => {
+app.get("/streetview-tile",
+  middlewareTokenProxy,
+  rateLimitMiddleware(60, 10 * 1000),
+  async (req, res) => {
   const pano = typeof req.query.pano === "string" ? req.query.pano.trim() : "";
   const zoom = Number(req.query.zoom);
   const x = Number(req.query.x);
@@ -269,31 +446,25 @@ app.get("/streetview-tile", async (req, res) => {
 
   const url = `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
   try {
-    let status;
-    let contentType;
-    let buf;
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-          "Referer": "https://www.google.com/",
-          "User-Agent": "Mozilla/5.0",
-        },
-      });
-      status = response.status;
-      contentType = response.headers.get("content-type") || "image/jpeg";
-      buf = Buffer.from(await response.arrayBuffer());
-    } catch (fetchError) {
-      console.warn("⚠️ Fetch de tile falló, reintentando por HTTPS IPv4:", fetchError.message);
-      const fallback = await descargarTileConHttps(url);
-      status = fallback.status;
-      contentType = fallback.contentType;
-      buf = fallback.body;
+    const descargarTile = async () => {
+      try {
+        return await descargarConLimites(url);
+      } catch (fetchError) {
+        console.warn("⚠️ Fetch de tile falló, reintentando por HTTPS IPv4:", fetchError.message);
+        const fallback = await descargarTileConHttps(url);
+        if (fallback.status < 200 || fallback.status >= 300) return { error: fallback.status };
+        if (fallback.body.length > STREETVIEW_MAX_BYTES) return { error: 413 };
+        return { buffer: fallback.body, contentType: fallback.contentType };
+      }
+    };
+    const { buffer, contentType, error } = await conLimiteConcurrencia(descargarTile);
+    if (error) {
+      if (error === 404 || error === 410) marcarPanoCaducado(pano);
+      return res.status(error).json({ error: `Google Street View devolvió ${error}` });
     }
-    if (status < 200 || status >= 300) return res.status(status).json({ error: `Google Street View devolvió ${status}` });
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
-    res.send(buf);
+    res.send(buffer);
   } catch (err) {
     console.error("❌ Error al obtener tile de Street View:", err.message);
     res.status(502).json({ error: "Error al obtener tile de Street View" });
@@ -302,15 +473,19 @@ app.get("/streetview-tile", async (req, res) => {
 
 // Compatibilidad con clientes anteriores.
 app.get("/panorama-aleatorio", (req, res) => {
-  const idx = Math.floor(Math.random() * COORDENADAS.length);
-  res.json({ pano_id: COORDENADAS[idx].pano_id });
+  const validas = COORDENADAS.filter((c) => !PANOS_CADUCADOS.has(c.pano_id));
+  const pool = validas.length > 0 ? validas : COORDENADAS;
+  res.json({ pano_id: pool[Math.floor(Math.random() * pool.length)].pano_id });
 });
 
 // ---------------------------------------------------------------------------
 // Proxy de imágenes Street View. El cliente pide la imagen al servidor y el
 // servidor la descarga de Google con su API Key (nunca se expone la key al navegador).
 // ---------------------------------------------------------------------------
-app.get("/streetview", async (req, res) => {
+app.get("/streetview",
+  middlewareTokenProxy,
+  rateLimitMiddleware(120, 10 * 1000),
+  async (req, res) => {
   const pano = typeof req.query.pano === "string" ? req.query.pano.trim() : "";
   if (!pano) return res.status(400).json({ error: "Falta pano_id" });
   if (!PANOS_VALIDOS.has(pano)) return res.status(403).json({ error: "pano_id no autorizado" });
@@ -322,17 +497,17 @@ app.get("/streetview", async (req, res) => {
   const fov = Math.max(20, Math.min(120, Number(req.query.fov) || 75));
   const size = `${Math.min(2048, Math.max(320, Number(req.query.w) || 960))}x${Math.min(1152, Math.max(240, Number(req.query.h) || 640))}`;
 
-  const url = `https://maps.googleapis.com/maps/api/streetview?size=${size}&pano=${encodeURIComponent(pano)}&heading=${heading}&pitch=${pitch}&fov=${fov}&source=outdoor&key=${API_KEY}`;
+  const url = firmarUrl(`https://maps.googleapis.com/maps/api/streetview?size=${size}&pano=${encodeURIComponent(pano)}&heading=${heading}&pitch=${pitch}&fov=${fov}&source=outdoor&key=${API_KEY}`);
 
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: `Google Street View devolvió ${resp.status}` });
+    const { buffer, contentType, error } = await conLimiteConcurrencia(() => descargarConLimites(url));
+    if (error) {
+      if (error === 404 || error === 410) marcarPanoCaducado(pano);
+      return res.status(error).json({ error: `Google Street View devolvió ${error}` });
     }
-    const buf = Buffer.from(await resp.arrayBuffer());
-    res.set("Content-Type", resp.headers.get("content-type") || "image/jpeg");
+    res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
-    res.send(buf);
+    res.send(buffer);
   } catch (err) {
     console.error("❌ Error al obtener Street View:", err.message);
     res.status(502).json({ error: "Error al obtener Street View" });
@@ -396,6 +571,7 @@ io.on("connection", (socket) => {
       panicTimerId: null,
       esDuelo: false,
       historiaRondas: [],
+      revanchaSolicitudes: new Set(),
       ultimaActividad: Date.now(),
     };
 
@@ -571,7 +747,7 @@ io.on("connection", (socket) => {
     for (const j of sala.jugadores.values()) j.hp = 5000;
     sala.historiaRondas = [];
 
-    iniciarRonda(sala);
+    iniciarRonda(sala).catch((err) => console.error("❌ Error al iniciar ronda:", err));
     callback?.({ ok: true });
   });
 
@@ -674,40 +850,37 @@ io.on("connection", (socket) => {
     if (sala.totalRondas > 0 && sala.rondaActual >= sala.totalRondas) {
       finalizarJuego(sala);
     } else {
-      iniciarRonda(sala);
+      iniciarRonda(sala).catch((err) => console.error("❌ Error al iniciar ronda:", err));
     }
   });
 
   socket.on("solicitar_revancha", ({ codigo }, callback) => {
     const sala = salas.get(codigo);
     if (!sala) return callback?.({ ok: false, error: "Sala no encontrada." });
-
-    sala.estado = "LOBBY";
-    sala.rondaActual = 0;
-    sala.coordActual = null;
-    sala.indicesUsados.clear();
-    sala.jugadoresListos.clear();
-    sala.historiaRondas = [];
-    sala.ultimaActividad = Date.now();
-    limpiarTimersRonda(sala);
-
-    for (const j of sala.jugadores.values()) {
-      j.puntosTotal = 0;
-      j.puntosRonda = 0;
-      j.distanciaRonda = 0;
-      j.adivinanza = null;
-      j.listo = false;
-      j.hp = 5000;
+    if (sala.estado !== "GAME_OVER") {
+      return callback?.({ ok: false, error: "La partida todavía no ha terminado." });
     }
 
-    io.to(codigo).emit("revancha_iniciada", {
-      jugadores: listaJugadores(sala),
-      totalRondas: sala.totalRondas,
-      maxJugadores: sala.maxJugadores,
-      esPublica: sala.esPublica,
+    sala.ultimaActividad = Date.now();
+    sala.revanchaSolicitudes.add(socket.id);
+
+    const jugadoresActivos = [...sala.jugadores.entries()]
+      .filter(([, jugador]) => !jugador.desconectado);
+    const solicitudes = [...sala.revanchaSolicitudes]
+      .filter((id) => jugadoresActivos.some(([jugadorId]) => jugadorId === id));
+    sala.revanchaSolicitudes = new Set(solicitudes);
+
+    io.to(codigo).emit("revancha_solicitada", {
+      solicitantes: solicitudes,
+      totalJugadores: jugadoresActivos.length,
     });
 
-    callback?.({ ok: true });
+    if (jugadoresActivos.length > 0 && solicitudes.length >= jugadoresActivos.length) {
+      iniciarRevancha(sala);
+      callback?.({ ok: true, iniciada: true });
+    } else {
+      callback?.({ ok: true, iniciada: false });
+    }
   });
 
   socket.on("disconnect", () => {
@@ -774,7 +947,7 @@ function limpiarTimersRonda(sala) {
   if (sala.panicTimerId) { clearTimeout(sala.panicTimerId); sala.panicTimerId = null; sala.panicTimerActivo = false; }
 }
 
-function iniciarRonda(sala) {
+async function iniciarRonda(sala) {
   sala.rondaActual++;
   sala.estado = "JUGANDO";
   sala.jugadoresListos.clear();
@@ -787,7 +960,7 @@ function iniciarRonda(sala) {
     j.listo = false;
   }
 
-    sala.coordActual = seleccionarCoordenada(sala);
+    sala.coordActual = await seleccionarCoordenada(sala);
     sala.povHeading = Math.floor(Math.random() * 360);
   const currentRoundId = sala.rondaActual;
 
@@ -809,6 +982,33 @@ function iniciarRonda(sala) {
       iniciarCuentaRegresiva(sala);
     }
   }, 15000);
+}
+
+function iniciarRevancha(sala) {
+  sala.estado = "LOBBY";
+  sala.rondaActual = 0;
+  sala.coordActual = null;
+  sala.indicesUsados.clear();
+  sala.jugadoresListos.clear();
+  sala.historiaRondas = [];
+  sala.revanchaSolicitudes.clear();
+  limpiarTimersRonda(sala);
+
+  for (const j of sala.jugadores.values()) {
+    j.puntosTotal = 0;
+    j.puntosRonda = 0;
+    j.distanciaRonda = 0;
+    j.adivinanza = null;
+    j.listo = false;
+    j.hp = 5000;
+  }
+
+  io.to(sala.codigo).emit("revancha_iniciada", {
+    jugadores: listaJugadores(sala),
+    totalRondas: sala.totalRondas,
+    maxJugadores: sala.maxJugadores,
+    esPublica: sala.esPublica,
+  });
 }
 
 function iniciarCuentaRegresiva(sala) {

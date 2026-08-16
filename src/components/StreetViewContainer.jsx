@@ -16,11 +16,13 @@ export default function StreetViewContainer({
   const [pitch, setPitch] = useState(0);
   const [fov, setFov] = useState(75);
   const [imgUrl, setImgUrl] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [status, setStatus] = useState('Iniciando...');
   const [errorMessage, setErrorMessage] = useState(null);
   const dragRef = useRef(null);
   const loadTimerRef = useRef(null);
   const readyRef = useRef(false);
+  const initialHeadingRef = useRef(null);
 
   const panoId = currentCoord?.pano_id;
   const isLocked = viewMode === 'estatico';
@@ -36,6 +38,8 @@ export default function StreetViewContainer({
         w: '1280',
         h: '640',
       });
+      const token = import.meta.env.VITE_STREETVIEW_TOKEN;
+      if (token) params.set('token', token);
       return `${SERVER_URL}/streetview?${params.toString()}`;
     },
     [panoId]
@@ -47,6 +51,7 @@ export default function StreetViewContainer({
       (viewMode === 'estatico' || viewMode === 'temporal') && panoHeading != null
         ? Number(panoHeading)
         : Math.floor(Math.random() * 360);
+    initialHeadingRef.current = inicial;
     setHeading(inicial);
     setPitch(0);
     setFov(75);
@@ -58,20 +63,21 @@ export default function StreetViewContainer({
   // Señal de reset (botón "restablecer vista").
   useEffect(() => {
     if (resetSignal === 0) return;
-    setHeading(Math.floor(Math.random() * 360));
+    setHeading(initialHeadingRef.current ?? Math.floor(Math.random() * 360));
     setPitch(0);
+    setFov(75);
   }, [resetSignal]);
 
-  // Cargar imagen con pequeño debounce para no saturar el servidor durante el arrastre.
+  // No solicitar imágenes intermedias mientras el usuario arrastra la vista.
   useEffect(() => {
-    if (!panoId) return;
+    if (!panoId || isDragging) return;
     const url = buildUrl(heading, pitch, fov);
     if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
-    loadTimerRef.current = setTimeout(() => setImgUrl(url), 120);
+    loadTimerRef.current = setTimeout(() => setImgUrl(url), 350);
     return () => {
       if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
     };
-  }, [heading, pitch, fov, panoId, buildUrl]);
+  }, [heading, pitch, fov, panoId, buildUrl, isDragging]);
 
   // Reportar heading para la brújula.
   useEffect(() => {
@@ -95,6 +101,7 @@ export default function StreetViewContainer({
   const onPointerDown = (e) => {
     if (isLocked) return;
     e.preventDefault();
+    setIsDragging(true);
     dragRef.current = { x: e.clientX, y: e.clientY };
   };
   const onPointerMove = (e) => {
@@ -105,7 +112,10 @@ export default function StreetViewContainer({
     setHeading((h) => (h - dx * 0.3 + 360) % 360);
     setPitch((p) => Math.max(-80, Math.min(80, p - dy * 0.3)));
   };
-  const onPointerUp = () => { dragRef.current = null; };
+  const onPointerUp = () => {
+    dragRef.current = null;
+    setIsDragging(false);
+  };
 
   const onWheel = (e) => {
     if (isLocked) return;
@@ -121,6 +131,7 @@ export default function StreetViewContainer({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onPointerLeave={onPointerUp}
       onWheel={onWheel}
       style={{ touchAction: isLocked ? 'auto' : 'none', cursor: isLocked ? 'default' : 'grab' }}
     >

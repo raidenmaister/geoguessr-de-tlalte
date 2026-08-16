@@ -123,6 +123,8 @@ function GeoGuessrApp() {
   const [roundResult, setRoundResult] = useState(null);
   const [esUltimaRonda, setEsUltimaRonda] = useState(false);
   const [gameOverData, setGameOverData] = useState(null);
+  const [revanchaSolicitada, setRevanchaSolicitada] = useState([]);
+  const [revanchaTotalJugadores, setRevanchaTotalJugadores] = useState(0);
   const [singleplayerHistory, setSingleplayerHistory] = useState([]);
 
   // ═══ ADIVINARON (multijugador) ═══
@@ -363,31 +365,40 @@ function GeoGuessrApp() {
         setScreen(SCREEN.RESULT);
       },
 
-      onFinJuego: ({ ranking, totalRondas: tr, historiaRondas }) => {
+       onFinJuego: ({ ranking, totalRondas: tr, historiaRondas }) => {
         setPanicActive(false);
         setActiveEmotes([]);
         if (panicTimerRef.current) clearInterval(panicTimerRef.current);
         if (roundTimerRef.current) clearInterval(roundTimerRef.current);
         playKOSFX();
 
-        setGameOverData({
+         setGameOverData({
           ranking,
           totalRondas: tr || totalRondas,
           historiaRondas: historiaRondas || [],
-        });
-        setScreen(SCREEN.GAME_OVER);
-      },
+         });
+         setRevanchaSolicitada([]);
+         setRevanchaTotalJugadores(0);
+         setScreen(SCREEN.GAME_OVER);
+       },
+
+       onRevanchaSolicitada: ({ solicitantes, totalJugadores }) => {
+         setRevanchaSolicitada(solicitantes || []);
+         setRevanchaTotalJugadores(totalJugadores || 0);
+       },
 
        onRevanchaIniciada: ({ jugadores, totalRondas: tr, maxJugadores: mj, esPublica: ep }) => {
         setPuntosAcumulados(0);
         setRonda(1);
-        setTotalRondas(tr || 5);
+         setTotalRondas(tr ?? 5);
         if (mj) setMaxJugadores(mj);
          if (ep !== undefined) setEsPublica(ep);
          setTemporalVisible(true);
         setRoomPlayers(jugadores);
         setRoundResult(null);
-        setGameOverData(null);
+         setGameOverData(null);
+          setRevanchaSolicitada([]);
+          setRevanchaTotalJugadores(0);
         setEsDuelo(jugadores.length === 2);
         setScreen(SCREEN.LOBBY);
       },
@@ -553,7 +564,7 @@ function GeoGuessrApp() {
     if (isLoading) return;
     setIsMultiplayer(false);
     setRonda(1);
-    setTotalRondas(config.totalRondas || 5);
+    setTotalRondas(config.totalRondas ?? 5);
     setPuntosAcumulados(0);
     setSingleplayerHistory([]);
     setModoVista(config.modoVista || 'libre');
@@ -585,7 +596,8 @@ function GeoGuessrApp() {
 
   const handleRematch = useCallback(async () => {
     if (isMultiplayer && roomCode) {
-      await socket.solicitarRevancha(roomCode);
+      const res = await socket.solicitarRevancha(roomCode);
+      if (!res.ok) alert(res.error || 'No se pudo solicitar la revancha');
     } else {
       handleStartSinglePlayer();
     }
@@ -675,9 +687,12 @@ function GeoGuessrApp() {
         ranking={gameOverData.ranking}
         historiaRondas={gameOverData.historiaRondas}
         totalRondas={gameOverData.totalRondas}
-        isMultiplayer={isMultiplayer}
-        isHost={socket.getSocketId() === roomHostId}
-        onRematch={handleRematch}
+         isMultiplayer={isMultiplayer}
+         isHost={socket.getSocketId() === roomHostId}
+         revanchaSolicitada={revanchaSolicitada.includes(socket.getSocketId())}
+         revanchaSolicitudes={revanchaSolicitada.length}
+         revanchaTotalJugadores={revanchaTotalJugadores}
+         onRematch={handleRematch}
         onMainMenu={() => {
           socket.desconectar();
           localStorage.removeItem('geoguessr_session_token');

@@ -140,6 +140,7 @@ export function suscribirEventos(handlers) {
     cuenta_regresiva_activada: handlers.onCuentaRegresivaActivada,
     resultados_ronda: handlers.onResultadosRonda,
     fin_juego: handlers.onFinJuego,
+    revancha_solicitada: handlers.onRevanchaSolicitada,
     revancha_iniciada: handlers.onRevanchaIniciada,
     jugador_emote: handlers.onJugadorEmote,
     duelo_oponente_desconectado: handlers.onDueloOponenteDesconectado,
