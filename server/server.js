@@ -724,7 +724,6 @@ io.on("connection", (socket) => {
 
     sala.jugadores.set(socket.id, foundPlayerObj);
     sala.jugadoresListos.delete(foundPlayerId);
-    sala.jugadoresListos.add(socket.id);
     socket.join(salaCode);
 
     io.to(salaCode).emit("jugador_unido", {
@@ -790,6 +789,7 @@ io.on("connection", (socket) => {
   socket.on("enviar_adivinanza", ({ codigo, lat, lng }) => {
     const sala = salas.get(codigo);
     if (!sala || sala.estado !== "JUGANDO") return;
+    if (!sala.coordActual || !Number.isFinite(Number(sala.coordActual.lat)) || !Number.isFinite(Number(sala.coordActual.lng))) return;
 
     const jugador = sala.jugadores.get(socket.id);
     if (!jugador || jugador.adivinanza) return;
@@ -867,7 +867,8 @@ io.on("connection", (socket) => {
     if (!sala || socket.id !== sala.hostId) return;
     if (sala.estado !== "RESULTADOS") return;
 
-    if (sala.totalRondas > 0 && sala.rondaActual >= sala.totalRondas) {
+    const dueloTerminado = sala.esDuelo && [...sala.jugadores.values()].some((jugador) => jugador.hp <= 0);
+    if (dueloTerminado || (sala.totalRondas > 0 && sala.rondaActual >= sala.totalRondas)) {
       finalizarJuego(sala);
     } else {
       iniciarRonda(sala).catch((err) => console.error("❌ Error al iniciar ronda:", err));
