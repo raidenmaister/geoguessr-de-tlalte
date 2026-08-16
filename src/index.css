@@ -1010,7 +1010,6 @@ a[href*="google.com/maps"] {
 
 .menu-pano-canvas.is-front {
   opacity: 1;
-  animation: menu-pano-pan var(--menu-pano-rotation-duration) linear infinite alternate;
 }
 
 .menu-streetview.is-paused .menu-pano-canvas.is-front {
@@ -1020,11 +1019,6 @@ a[href*="google.com/maps"] {
 .menu-pano-placeholder {
   pointer-events: none;
   background: radial-gradient(ellipse at 50% 35%, #1c2a1e 0%, #0a0f0a 70%, #050805 100%);
-}
-
-@keyframes menu-pano-pan {
-  0% { transform: translateX(0.35%); }
-  100% { transform: translateX(-0.35%); }
 }
 
 .menu-streetview-shade {

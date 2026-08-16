@@ -4,8 +4,9 @@ import { conectar, SERVER_URL } from '../services/client';
 import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
-// Se puede cambiar a 12000, 18000, etc. para acelerar o ralentizar el giro.
-const BACKGROUND_ROTATION_DURATION_MS = 15000;
+// Se puede cambiar este intervalo para acelerar o ralentizar el giro real.
+const BACKGROUND_ROTATION_INTERVAL_MS = 1000;
+const BACKGROUND_ROTATION_STEP_DEG = 30;
 const BACKGROUND_CROSSFADE_DURATION_MS = 900;
 
 function getBackgroundResolution() {
@@ -45,9 +46,16 @@ export function MenuStreetViewBackground() {
 
   useEffect(() => {
     let active = true;
+    let rotationTimer = null;
     let swapTimer = null;
     let controller = null;
-    const stateRef = { front: 'a', panoId: null, paused: document.hidden || !document.hasFocus() };
+    const stateRef = {
+      front: 'a',
+      panoId: null,
+      heading: 0,
+      paused: document.hidden || !document.hasFocus(),
+      loadingImage: false,
+    };
 
     const loadPanoId = async () => {
       controller?.abort();
@@ -66,8 +74,6 @@ export function MenuStreetViewBackground() {
         return null;
       }
     };
-
-    const buildBackgroundUrl = (panoId) => buildStreetViewUrl(panoId, Math.floor(Math.random() * 360));
 
     const preloadImage = (url) => new Promise((resolve, reject) => {
       const image = new Image();
@@ -88,27 +94,47 @@ export function MenuStreetViewBackground() {
       setFront(next);
     };
 
-    const loadNextPano = async () => {
-      if (!active || stateRef.paused) return;
-      const panoId = await loadPanoId();
-      if (!active || stateRef.paused || !panoId) return;
-      const url = buildBackgroundUrl(panoId);
+    const loadHeadingImage = async (panoId, heading) => {
+      if (!active || stateRef.paused || stateRef.loadingImage) return;
+      stateRef.loadingImage = true;
       try {
+        const url = buildStreetViewUrl(panoId, heading);
         await preloadImage(url);
-        if (!active || stateRef.paused) return;
-        stateRef.panoId = panoId;
+        if (!active || stateRef.paused || stateRef.panoId !== panoId) return;
         showImage(url);
       } catch {
-        // Se conserva la imagen actual si Google no entrega la siguiente.
+        // Se conserva la vista actual si Google no entrega el siguiente heading.
+      } finally {
+        stateRef.loadingImage = false;
       }
     };
 
+    const rotateBackground = () => {
+      if (!active || stateRef.paused || !stateRef.panoId || stateRef.loadingImage) return;
+      stateRef.heading = (stateRef.heading + BACKGROUND_ROTATION_STEP_DEG) % 360;
+      loadHeadingImage(stateRef.panoId, stateRef.heading);
+    };
+
+    const loadNextPano = async () => {
+      if (!active || stateRef.paused || stateRef.loadingImage) return;
+      const panoId = await loadPanoId();
+      if (!active || stateRef.paused || !panoId) return;
+      stateRef.panoId = panoId;
+      stateRef.heading = Math.floor(Math.random() * 360);
+      loadHeadingImage(panoId, stateRef.heading);
+    };
+
     const startTimer = () => {
-      if (swapTimer || stateRef.paused) return;
+      if (rotationTimer || stateRef.paused) return;
+      rotationTimer = window.setInterval(rotateBackground, BACKGROUND_ROTATION_INTERVAL_MS);
       swapTimer = window.setInterval(loadNextPano, PANO_INTERVAL_MS);
     };
 
     const stopTimer = () => {
+      if (rotationTimer) {
+        window.clearInterval(rotationTimer);
+        rotationTimer = null;
+      }
       if (swapTimer) {
         window.clearInterval(swapTimer);
         swapTimer = null;
@@ -131,11 +157,12 @@ export function MenuStreetViewBackground() {
     async function init() {
       const panoId = await loadPanoId();
       if (!active || stateRef.paused || !panoId) return;
-      const url = buildBackgroundUrl(panoId);
+      stateRef.panoId = panoId;
+      stateRef.heading = Math.floor(Math.random() * 360);
       try {
+        const url = buildStreetViewUrl(panoId, stateRef.heading);
         await preloadImage(url);
-        if (!active || stateRef.paused) return;
-        stateRef.panoId = panoId;
+        if (!active || stateRef.paused || stateRef.panoId !== panoId) return;
         showImage(url);
         startTimer();
       } catch {
@@ -166,7 +193,6 @@ export function MenuStreetViewBackground() {
     <div
       className={`menu-streetview ${isPaused ? 'is-paused' : ''}`}
       style={{
-        '--menu-pano-rotation-duration': `${BACKGROUND_ROTATION_DURATION_MS}ms`,
         '--menu-pano-crossfade-duration': `${BACKGROUND_CROSSFADE_DURATION_MS}ms`,
       }}
       aria-hidden="true"
