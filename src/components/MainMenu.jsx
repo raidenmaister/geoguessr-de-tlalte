@@ -5,7 +5,7 @@ import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
 // Cambia este valor para acelerar o ralentizar el giro suave del mismo panorama.
-const BACKGROUND_ROTATION_DEGREES_PER_SECOND = 18;
+const BACKGROUND_ROTATION_DEGREES_PER_SECOND = 6;
 const PANO_TILE_ZOOM_LARGE = 4;
 const PANO_TILE_ZOOM_SMALL = 3;
 const PANO_TILE_SIZE = 512;

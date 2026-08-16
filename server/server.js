@@ -10,6 +10,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
@@ -58,6 +59,30 @@ try {
 }
 
 const PANOS_VALIDOS = new Set(COORDENADAS.map((c) => c.pano_id).filter(Boolean));
+
+function descargarTileConHttps(url) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, {
+      family: 4,
+      timeout: 15000,
+      headers: {
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        "Referer": "https://www.google.com/",
+        "User-Agent": "Mozilla/5.0",
+      },
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => resolve({
+        status: response.statusCode || 502,
+        contentType: response.headers["content-type"] || "image/jpeg",
+        body: Buffer.concat(chunks),
+      }));
+    });
+    request.on("timeout", () => request.destroy(new Error("Timeout al descargar tile")));
+    request.on("error", reject);
+  });
+}
 
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -244,10 +269,29 @@ app.get("/streetview-tile", async (req, res) => {
 
   const url = `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
   try {
-    const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!response.ok) return res.status(response.status).json({ error: `Google Street View devolvió ${response.status}` });
-    const buf = Buffer.from(await response.arrayBuffer());
-    res.set("Content-Type", response.headers.get("content-type") || "image/jpeg");
+    let status;
+    let contentType;
+    let buf;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          "Referer": "https://www.google.com/",
+          "User-Agent": "Mozilla/5.0",
+        },
+      });
+      status = response.status;
+      contentType = response.headers.get("content-type") || "image/jpeg";
+      buf = Buffer.from(await response.arrayBuffer());
+    } catch (fetchError) {
+      console.warn("⚠️ Fetch de tile falló, reintentando por HTTPS IPv4:", fetchError.message);
+      const fallback = await descargarTileConHttps(url);
+      status = fallback.status;
+      contentType = fallback.contentType;
+      buf = fallback.body;
+    }
+    if (status < 200 || status >= 300) return res.status(status).json({ error: `Google Street View devolvió ${status}` });
+    res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
     res.send(buf);
   } catch (err) {
