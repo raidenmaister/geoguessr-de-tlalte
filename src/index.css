@@ -3106,7 +3106,7 @@ a[href*="google.com/maps"] {
 .screen-join,
 .screen-lobby,
 .screen-username {
-  background: var(--bg-main);
+  background: transparent;
 }
 
 .btn-primary,
