@@ -69,6 +69,7 @@ try {
 }
 
 const PANOS_VALIDOS = new Set(COORDENADAS.map((c) => c.pano_id).filter(Boolean));
+let ultimoErrorTileLog = 0;
 
 function descargarTileConHttps(url) {
   return new Promise((resolve, reject) => {
@@ -427,7 +428,7 @@ app.get("/panorama-fondo", (req, res) => {
 // panorama localmente sin solicitar una nueva perspectiva en cada frame.
 app.get("/streetview-tile",
   middlewareTokenProxy,
-  rateLimitMiddleware(60, 10 * 1000),
+  rateLimitMiddleware(180, 10 * 1000),
   async (req, res) => {
   const pano = typeof req.query.pano === "string" ? req.query.pano.trim() : "";
   const zoom = Number(req.query.zoom);
@@ -444,18 +445,34 @@ app.get("/streetview-tile",
     return res.status(400).json({ error: "Tile fuera de rango" });
   }
 
-  const url = `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
+  const query = `panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
+  const urls = [
+    `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&${query}`,
+    `https://geo0.ggpht.com/cbk?cb_client=maps_sv.tactile&authuser=0&hl=en&gl=us&output=tile&${query}`,
+    `https://geo1.ggpht.com/cbk?cb_client=maps_sv.tactile&authuser=0&hl=en&gl=us&output=tile&${query}`,
+  ];
   try {
     const descargarTile = async () => {
-      try {
-        return await descargarConLimites(url);
-      } catch (fetchError) {
-        console.warn("⚠️ Fetch de tile falló, reintentando por HTTPS IPv4:", fetchError.message);
-        const fallback = await descargarTileConHttps(url);
-        if (fallback.status < 200 || fallback.status >= 300) return { error: fallback.status };
-        if (fallback.body.length > STREETVIEW_MAX_BYTES) return { error: 413 };
-        return { buffer: fallback.body, contentType: fallback.contentType };
+      let lastError = 502;
+      for (const url of urls) {
+        try {
+          const result = await descargarConLimites(url);
+          if (!result.error) return result;
+          lastError = result.error;
+        } catch {
+          try {
+            const fallback = await descargarTileConHttps(url);
+            if (fallback.status >= 200 && fallback.status < 300) {
+              if (fallback.body.length > STREETVIEW_MAX_BYTES) return { error: 413 };
+              return { buffer: fallback.body, contentType: fallback.contentType };
+            }
+            lastError = fallback.status;
+          } catch {
+            // Probar el siguiente host de Google.
+          }
+        }
       }
+      return { error: lastError };
     };
     const { buffer, contentType, error } = await conLimiteConcurrencia(descargarTile);
     if (error) {
