@@ -4,136 +4,240 @@ import { conectar, SERVER_URL } from '../services/client';
 import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
-// Se puede cambiar este intervalo para acelerar o ralentizar el giro real.
-const BACKGROUND_ROTATION_INTERVAL_MS = 1000;
-const BACKGROUND_ROTATION_STEP_DEG = 30;
+// Cambia este valor para acelerar o ralentizar el giro suave del mismo panorama.
+const BACKGROUND_ROTATION_DEGREES_PER_SECOND = 18;
+const PANO_TILE_ZOOM_LARGE = 4;
+const PANO_TILE_ZOOM_SMALL = 3;
+const PANO_TILE_SIZE = 512;
+const PANO_FOV_DEG = 100;
 const BACKGROUND_CROSSFADE_DURATION_MS = 900;
 
-function getBackgroundResolution() {
-  const aspectRatio = window.innerWidth / Math.max(window.innerHeight, 1);
+function getCanvasResolution() {
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-  let width = Math.max(1280, Math.ceil(window.innerWidth * pixelRatio));
-  width = Math.min(width, 2048);
-  let height = Math.ceil(width / aspectRatio);
-
-  if (height > 1152) {
-    height = 1152;
-    width = Math.ceil(height * aspectRatio);
-  }
-
-  return { width, height };
-}
-
-function buildStreetViewUrl(panoId, heading) {
-  const { width, height } = getBackgroundResolution();
-  const params = new URLSearchParams({
-    pano: panoId,
-    heading: String(Math.round(((heading % 360) + 360) % 360)),
-    pitch: '0',
-    fov: '100',
-    w: String(width),
-    h: String(height),
-  });
-  return `${SERVER_URL}/streetview?${params.toString()}`;
+  return {
+    width: Math.max(1, Math.ceil(window.innerWidth * pixelRatio)),
+    height: Math.max(1, Math.ceil(window.innerHeight * pixelRatio)),
+  };
 }
 
 export function MenuStreetViewBackground() {
-  const [urlA, setUrlA] = useState(null);
-  const [urlB, setUrlB] = useState(null);
+  const canvasARef = useRef(null);
+  const canvasBRef = useRef(null);
   const [front, setFront] = useState('a');
   const [ready, setReady] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     let active = true;
-    let rotationTimer = null;
     let swapTimer = null;
-    let controller = null;
+    let panoController = null;
+    let tileController = null;
     const stateRef = {
       front: 'a',
       panoId: null,
-      heading: 0,
+      panorama: null,
+      heading: Math.random() * 360,
       paused: document.hidden || !document.hasFocus(),
-      loadingImage: false,
+      loadingPano: false,
+      frameId: null,
+      lastFrameTime: 0,
     };
 
     const loadPanoId = async () => {
-      controller?.abort();
-      controller = new AbortController();
+      panoController?.abort();
+      panoController = new AbortController();
       try {
         const response = await fetch(`${SERVER_URL}/panorama-fondo`, {
           cache: 'no-store',
-          signal: controller.signal,
+          signal: panoController.signal,
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         return data.pano_id;
       } catch (error) {
-        if (error.name === 'AbortError') return null;
-        console.warn('No se pudo cargar el pano de fondo:', error);
+        if (error.name !== 'AbortError') console.warn('No se pudo cargar el pano de fondo:', error);
         return null;
       }
     };
 
-    const preloadImage = (url) => new Promise((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve(url);
-      image.onerror = reject;
-      image.src = url;
-    });
+    const loadTile = async (url, signal) => {
+      const response = await fetch(url, { cache: 'force-cache', signal });
+      if (!response.ok) throw new Error(`Tile HTTP ${response.status}`);
+      const blob = await response.blob();
+      const imageUrl = URL.createObjectURL(blob);
+      try {
+        const image = new Image();
+        image.decoding = 'async';
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = reject;
+          image.src = imageUrl;
+        });
+        return image;
+      } finally {
+        URL.revokeObjectURL(imageUrl);
+      }
+    };
 
-    const showImage = (url) => {
+    const loadPanorama = async (panoId, zoom, signal) => {
+      const columns = 2 ** zoom;
+      const rows = 2 ** (zoom - 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = columns * PANO_TILE_SIZE;
+      canvas.height = rows * PANO_TILE_SIZE;
+      const context = canvas.getContext('2d');
+      const tiles = [];
+
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < columns; x += 1) {
+          tiles.push({
+            x,
+            y,
+            url: `${SERVER_URL}/streetview-tile?pano=${encodeURIComponent(panoId)}&x=${x}&y=${y}&zoom=${zoom}`,
+          });
+        }
+      }
+
+      const loadedTiles = await Promise.all(tiles.map(async (tile) => ({
+        ...tile,
+        image: await loadTile(tile.url, signal),
+      })));
+
+      for (const tile of loadedTiles) {
+        context.drawImage(tile.image, tile.x * PANO_TILE_SIZE, tile.y * PANO_TILE_SIZE);
+      }
+
+      return { canvas, width: canvas.width, height: canvas.height };
+    };
+
+    const loadFallbackPanorama = async (panoId, signal) => {
+      const resolution = getCanvasResolution();
+      const width = Math.min(2048, Math.max(1280, resolution.width));
+      const height = Math.min(1152, Math.max(720, Math.ceil(width * resolution.height / resolution.width)));
+      const image = await loadTile(
+        `${SERVER_URL}/streetview?pano=${encodeURIComponent(panoId)}&heading=0&pitch=0&fov=${PANO_FOV_DEG}&w=${width}&h=${height}`,
+        signal,
+      );
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth || width;
+      canvas.height = image.naturalHeight || height;
+      canvas.getContext('2d').drawImage(image, 0, 0);
+      return { canvas, width: canvas.width, height: canvas.height };
+    };
+
+    const drawPanorama = (target, panorama, heading) => {
+      if (!target || !panorama) return;
+      const context = target.getContext('2d');
+      const { width, height } = target;
+      const aspectRatio = width / Math.max(height, 1);
+      const sourceWidth = panorama.width * (PANO_FOV_DEG / 360);
+      const sourceHeight = Math.min(panorama.height, sourceWidth / aspectRatio);
+      const sourceY = (panorama.height - sourceHeight) / 2;
+      let sourceX = ((heading / 360) * panorama.width - sourceWidth / 2 + panorama.width) % panorama.width;
+      let remainingWidth = sourceWidth;
+      let destinationX = 0;
+
+      context.clearRect(0, 0, width, height);
+      while (remainingWidth > 0.01) {
+        const chunkWidth = Math.min(remainingWidth, panorama.width - sourceX);
+        const destinationWidth = (chunkWidth / sourceWidth) * width;
+        context.drawImage(
+          panorama.canvas,
+          sourceX,
+          sourceY,
+          chunkWidth,
+          sourceHeight,
+          destinationX,
+          0,
+          destinationWidth,
+          height,
+        );
+        remainingWidth -= chunkWidth;
+        destinationX += destinationWidth;
+        sourceX = 0;
+      }
+    };
+
+    const resizeCanvases = () => {
+      const resolution = getCanvasResolution();
+      for (const canvas of [canvasARef.current, canvasBRef.current]) {
+        if (!canvas) continue;
+        canvas.width = resolution.width;
+        canvas.height = resolution.height;
+      }
+      if (stateRef.panorama) {
+        drawPanorama(
+          stateRef.front === 'a' ? canvasARef.current : canvasBRef.current,
+          stateRef.panorama,
+          stateRef.heading,
+        );
+      }
+    };
+
+    const showPanorama = (panorama, initial = false) => {
       if (!active || stateRef.paused) return;
       const next = stateRef.front === 'a' ? 'b' : 'a';
+      const nextCanvas = next === 'a' ? canvasARef.current : canvasBRef.current;
+      drawPanorama(nextCanvas, panorama, stateRef.heading);
+      stateRef.panorama = panorama;
       stateRef.front = next;
-      if (next === 'a') {
-        setUrlA(url);
-      } else {
-        setUrlB(url);
-      }
       setFront(next);
+      if (initial) setReady(true);
     };
 
-    const loadHeadingImage = async (panoId, heading) => {
-      if (!active || stateRef.paused || stateRef.loadingImage) return;
-      stateRef.loadingImage = true;
+    const loadNextPano = async (initial = false) => {
+      if (!active || stateRef.paused || stateRef.loadingPano) return;
+      stateRef.loadingPano = true;
+      tileController?.abort();
+      tileController = new AbortController();
       try {
-        const url = buildStreetViewUrl(panoId, heading);
-        await preloadImage(url);
-        if (!active || stateRef.paused || stateRef.panoId !== panoId) return;
-        showImage(url);
-      } catch {
-        // Se conserva la vista actual si Google no entrega el siguiente heading.
+        const panoId = await loadPanoId();
+        if (!active || stateRef.paused || !panoId) return;
+        const physicalWidth = window.innerWidth * (window.devicePixelRatio || 1);
+        const preferredZoom = physicalWidth >= 1920 ? PANO_TILE_ZOOM_LARGE : PANO_TILE_ZOOM_SMALL;
+        let panorama;
+        try {
+          try {
+            panorama = await loadPanorama(panoId, preferredZoom, tileController.signal);
+          } catch (error) {
+            if (error.name === 'AbortError') return;
+            if (preferredZoom !== PANO_TILE_ZOOM_LARGE) throw error;
+            panorama = await loadPanorama(panoId, PANO_TILE_ZOOM_SMALL, tileController.signal);
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') return;
+          panorama = await loadFallbackPanorama(panoId, tileController.signal);
+        }
+        if (!active || stateRef.paused) return;
+        stateRef.panoId = panoId;
+        showPanorama(panorama, initial);
+      } catch (error) {
+        if (error.name !== 'AbortError') console.warn('No se pudo cargar el panorama 360:', error);
       } finally {
-        stateRef.loadingImage = false;
+        stateRef.loadingPano = false;
       }
-    };
-
-    const rotateBackground = () => {
-      if (!active || stateRef.paused || !stateRef.panoId || stateRef.loadingImage) return;
-      stateRef.heading = (stateRef.heading + BACKGROUND_ROTATION_STEP_DEG) % 360;
-      loadHeadingImage(stateRef.panoId, stateRef.heading);
-    };
-
-    const loadNextPano = async () => {
-      if (!active || stateRef.paused || stateRef.loadingImage) return;
-      const panoId = await loadPanoId();
-      if (!active || stateRef.paused || !panoId) return;
-      stateRef.panoId = panoId;
-      stateRef.heading = Math.floor(Math.random() * 360);
-      loadHeadingImage(panoId, stateRef.heading);
     };
 
     const startTimer = () => {
-      if (rotationTimer || stateRef.paused) return;
-      rotationTimer = window.setInterval(rotateBackground, BACKGROUND_ROTATION_INTERVAL_MS);
+      if (stateRef.frameId || stateRef.paused) return;
+      stateRef.lastFrameTime = performance.now();
+      const renderFrame = (timestamp) => {
+        if (!active || stateRef.paused) return;
+        const elapsed = Math.min(timestamp - stateRef.lastFrameTime, 100);
+        stateRef.lastFrameTime = timestamp;
+        stateRef.heading = (stateRef.heading + (elapsed / 1000) * BACKGROUND_ROTATION_DEGREES_PER_SECOND) % 360;
+        const frontCanvas = stateRef.front === 'a' ? canvasARef.current : canvasBRef.current;
+        drawPanorama(frontCanvas, stateRef.panorama, stateRef.heading);
+        stateRef.frameId = window.requestAnimationFrame(renderFrame);
+      };
+      stateRef.frameId = window.requestAnimationFrame(renderFrame);
       swapTimer = window.setInterval(loadNextPano, PANO_INTERVAL_MS);
     };
 
     const stopTimer = () => {
-      if (rotationTimer) {
-        window.clearInterval(rotationTimer);
-        rotationTimer = null;
+      if (stateRef.frameId) {
+        window.cancelAnimationFrame(stateRef.frameId);
+        stateRef.frameId = null;
       }
       if (swapTimer) {
         window.clearInterval(swapTimer);
@@ -147,30 +251,22 @@ export function MenuStreetViewBackground() {
       setIsPaused(stateRef.paused);
       if (stateRef.paused) {
         stopTimer();
-        controller?.abort();
+        panoController?.abort();
+        tileController?.abort();
+      } else if (stateRef.panorama) {
+        startTimer();
       } else {
-        if (stateRef.panoId) startTimer();
-        else init();
+        loadNextPano(true);
       }
     };
 
-    async function init() {
-      const panoId = await loadPanoId();
-      if (!active || stateRef.paused || !panoId) return;
-      stateRef.panoId = panoId;
-      stateRef.heading = Math.floor(Math.random() * 360);
-      try {
-        const url = buildStreetViewUrl(panoId, stateRef.heading);
-        await preloadImage(url);
-        if (!active || stateRef.paused || stateRef.panoId !== panoId) return;
-        showImage(url);
-        startTimer();
-      } catch {
-        // El placeholder permanece visible si la primera imagen falla.
-      }
+    resizeCanvases();
+    if (!stateRef.paused) {
+      loadNextPano(true).then(() => {
+        if (active && !stateRef.paused && stateRef.panorama) startTimer();
+      });
     }
-
-    init();
+    window.addEventListener('resize', resizeCanvases);
     document.addEventListener('visibilitychange', updatePausedState);
     window.addEventListener('focus', updatePausedState);
     window.addEventListener('blur', updatePausedState);
@@ -178,40 +274,26 @@ export function MenuStreetViewBackground() {
 
     return () => {
       active = false;
+      window.removeEventListener('resize', resizeCanvases);
       document.removeEventListener('visibilitychange', updatePausedState);
       window.removeEventListener('focus', updatePausedState);
       window.removeEventListener('blur', updatePausedState);
       document.removeEventListener('fullscreenchange', updatePausedState);
       stopTimer();
-      controller?.abort();
+      panoController?.abort();
+      tileController?.abort();
     };
   }, []);
-
-  const onLoad = () => setReady(true);
 
   return (
     <div
       className={`menu-streetview ${isPaused ? 'is-paused' : ''}`}
-      style={{
-        '--menu-pano-crossfade-duration': `${BACKGROUND_CROSSFADE_DURATION_MS}ms`,
-      }}
+      style={{ '--menu-pano-crossfade-duration': `${BACKGROUND_CROSSFADE_DURATION_MS}ms` }}
       aria-hidden="true"
     >
       <div className="menu-pano-layers">
-        <img
-          src={urlA || undefined}
-          alt=""
-          draggable={false}
-          onLoad={onLoad}
-          className={`menu-pano-canvas ${front === 'a' ? 'is-front' : ''}`}
-        />
-        <img
-          src={urlB || undefined}
-          alt=""
-          draggable={false}
-          onLoad={onLoad}
-          className={`menu-pano-canvas ${front === 'b' ? 'is-front' : ''}`}
-        />
+        <canvas ref={canvasARef} className={`menu-pano-canvas ${front === 'a' ? 'is-front' : ''}`} />
+        <canvas ref={canvasBRef} className={`menu-pano-canvas ${front === 'b' ? 'is-front' : ''}`} />
       </div>
       {!ready && <div className="menu-pano-placeholder" />}
       <div className="menu-streetview-shade" />
@@ -252,7 +334,7 @@ export default function MainMenu({ username, onCreateRoom, onJoinRoom, onEditUse
           <span className="menu-flag" aria-hidden="true">🇲🇽</span> Tlaltenango, Zacatecas
         </div>
         <p className="screen-subtitle">Explora lugares reales y adivina dónde estás.</p>
-        
+
         <div className="menu-options">
           <button onClick={onCreateRoom} className="btn-menu-card">
             <Plus size={32} />
@@ -280,7 +362,7 @@ export default function MainMenu({ username, onCreateRoom, onJoinRoom, onEditUse
         </div>
 
         <div className="connection-status">
-          <Wifi size={14} className={isConnected ? "text-success" : "text-error"} />
+          <Wifi size={14} className={isConnected ? 'text-success' : 'text-error'} />
           <span>{isConnected ? 'En línea' : 'Sin conexión'}</span>
         </div>
       </div>

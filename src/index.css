@@ -997,11 +997,11 @@ a[href*="google.com/maps"] {
 
 .menu-pano-canvas {
   position: absolute;
-  inset: -1%;
+  inset: 0;
   pointer-events: none;
-  width: 102%;
-  height: 102%;
-  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  display: block;
   user-select: none;
   will-change: transform;
   opacity: 0;
@@ -1013,7 +1013,7 @@ a[href*="google.com/maps"] {
 }
 
 .menu-streetview.is-paused .menu-pano-canvas.is-front {
-  animation-play-state: paused;
+  transition: none;
 }
 
 .menu-pano-placeholder {

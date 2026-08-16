@@ -224,6 +224,38 @@ app.get("/panorama-fondo", (req, res) => {
   res.json({ pano_id });
 });
 
+// Proxy de tiles equirectangulares para que el cliente pueda girar un mismo
+// panorama localmente sin solicitar una nueva perspectiva en cada frame.
+app.get("/streetview-tile", async (req, res) => {
+  const pano = typeof req.query.pano === "string" ? req.query.pano.trim() : "";
+  const zoom = Number(req.query.zoom);
+  const x = Number(req.query.x);
+  const y = Number(req.query.y);
+  const columns = 2 ** zoom;
+  const rows = 2 ** Math.max(zoom - 1, 0);
+
+  if (!pano || !PANOS_VALIDOS.has(pano)) {
+    return res.status(403).json({ error: "pano_id no autorizado" });
+  }
+  if (!Number.isInteger(zoom) || zoom < 1 || zoom > 4 || !Number.isInteger(x) || !Number.isInteger(y)
+    || x < 0 || x >= columns || y < 0 || y >= rows) {
+    return res.status(400).json({ error: "Tile fuera de rango" });
+  }
+
+  const url = `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
+  try {
+    const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!response.ok) return res.status(response.status).json({ error: `Google Street View devolvió ${response.status}` });
+    const buf = Buffer.from(await response.arrayBuffer());
+    res.set("Content-Type", response.headers.get("content-type") || "image/jpeg");
+    res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+    res.send(buf);
+  } catch (err) {
+    console.error("❌ Error al obtener tile de Street View:", err.message);
+    res.status(502).json({ error: "Error al obtener tile de Street View" });
+  }
+});
+
 // Compatibilidad con clientes anteriores.
 app.get("/panorama-aleatorio", (req, res) => {
   const idx = Math.floor(Math.random() * COORDENADAS.length);
