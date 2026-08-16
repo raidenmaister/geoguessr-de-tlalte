@@ -244,7 +244,7 @@ app.get("/streetview", async (req, res) => {
   const heading = Math.max(0, Math.min(360, Number(req.query.heading) || 0));
   const pitch = Math.max(-90, Math.min(90, Number(req.query.pitch) || 0));
   const fov = Math.max(20, Math.min(120, Number(req.query.fov) || 75));
-  const size = `${Math.min(1280, Math.max(320, Number(req.query.w) || 960))}x${Math.min(720, Math.max(240, Number(req.query.h) || 640))}`;
+  const size = `${Math.min(2048, Math.max(320, Number(req.query.w) || 960))}x${Math.min(1152, Math.max(240, Number(req.query.h) || 640))}`;
 
   const url = `https://maps.googleapis.com/maps/api/streetview?size=${size}&pano=${encodeURIComponent(pano)}&heading=${heading}&pitch=${pitch}&fov=${fov}&source=outdoor&key=${API_KEY}`;
 

@@ -976,21 +976,6 @@ a[href*="google.com/maps"] {
   inset: 0;
 }
 
-.menu-pano-blackout {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  background: #000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 450ms ease;
-}
-
-.menu-streetview.is-transitioning .menu-pano-blackout {
-  opacity: 1;
-  transition-duration: 450ms;
-}
-
 .menu-streetview {
   z-index: 0;
   overflow: hidden;
@@ -1012,21 +997,20 @@ a[href*="google.com/maps"] {
 
 .menu-pano-canvas {
   position: absolute;
-  inset: 0;
+  inset: -1%;
   pointer-events: none;
-  width: 100%;
-  height: 100%;
+  width: 102%;
+  height: 102%;
   object-fit: cover;
   user-select: none;
-  filter: blur(1px) saturate(0.98);
   will-change: transform;
   opacity: 0;
-  transition: opacity 0.26s ease;
+  transition: opacity var(--menu-pano-crossfade-duration) cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 .menu-pano-canvas.is-front {
   opacity: 1;
-  animation: menu-pano-pan 20s linear infinite alternate;
+  animation: menu-pano-pan var(--menu-pano-rotation-duration) linear infinite alternate;
 }
 
 .menu-streetview.is-paused .menu-pano-canvas.is-front {
@@ -1039,8 +1023,8 @@ a[href*="google.com/maps"] {
 }
 
 @keyframes menu-pano-pan {
-  0% { transform: scale(1.08) translateX(2%); }
-  100% { transform: scale(1.16) translateX(-2%); }
+  0% { transform: translateX(0.35%); }
+  100% { transform: translateX(-0.35%); }
 }
 
 .menu-streetview-shade {

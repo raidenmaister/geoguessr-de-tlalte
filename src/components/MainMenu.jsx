@@ -4,16 +4,34 @@ import { conectar, SERVER_URL } from '../services/client';
 import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
-const TRANSITION_MS = 900;
+// Se puede cambiar a 12000, 18000, etc. para acelerar o ralentizar el giro.
+const BACKGROUND_ROTATION_DURATION_MS = 15000;
+const BACKGROUND_CROSSFADE_DURATION_MS = 900;
+
+function getBackgroundResolution() {
+  const aspectRatio = window.innerWidth / Math.max(window.innerHeight, 1);
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+  let width = Math.max(1280, Math.ceil(window.innerWidth * pixelRatio));
+  width = Math.min(width, 2048);
+  let height = Math.ceil(width / aspectRatio);
+
+  if (height > 1152) {
+    height = 1152;
+    width = Math.ceil(height * aspectRatio);
+  }
+
+  return { width, height };
+}
 
 function buildStreetViewUrl(panoId, heading) {
+  const { width, height } = getBackgroundResolution();
   const params = new URLSearchParams({
     pano: panoId,
     heading: String(Math.round(((heading % 360) + 360) % 360)),
     pitch: '0',
     fov: '100',
-    w: '640',
-    h: '640',
+    w: String(width),
+    h: String(height),
   });
   return `${SERVER_URL}/streetview?${params.toString()}`;
 }
@@ -23,13 +41,11 @@ export function MenuStreetViewBackground() {
   const [urlB, setUrlB] = useState(null);
   const [front, setFront] = useState('a');
   const [ready, setReady] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     let active = true;
     let swapTimer = null;
-    let transitionTimer = null;
     let controller = null;
     const stateRef = { front: 'a', panoId: null, paused: document.hidden || !document.hasFocus() };
 
@@ -60,7 +76,7 @@ export function MenuStreetViewBackground() {
       image.src = url;
     });
 
-    const showImage = (url, initial = false) => {
+    const showImage = (url) => {
       if (!active || stateRef.paused) return;
       const next = stateRef.front === 'a' ? 'b' : 'a';
       stateRef.front = next;
@@ -70,13 +86,6 @@ export function MenuStreetViewBackground() {
         setUrlB(url);
       }
       setFront(next);
-      if (!initial) {
-        setIsTransitioning(true);
-        window.clearTimeout(transitionTimer);
-        transitionTimer = window.setTimeout(() => {
-          if (active) setIsTransitioning(false);
-        }, TRANSITION_MS);
-      }
     };
 
     const loadNextPano = async () => {
@@ -127,7 +136,7 @@ export function MenuStreetViewBackground() {
         await preloadImage(url);
         if (!active || stateRef.paused) return;
         stateRef.panoId = panoId;
-        showImage(url, true);
+        showImage(url);
         startTimer();
       } catch {
         // El placeholder permanece visible si la primera imagen falla.
@@ -148,14 +157,20 @@ export function MenuStreetViewBackground() {
       document.removeEventListener('fullscreenchange', updatePausedState);
       stopTimer();
       controller?.abort();
-      window.clearTimeout(transitionTimer);
     };
   }, []);
 
   const onLoad = () => setReady(true);
 
   return (
-    <div className={`menu-streetview ${isTransitioning ? 'is-transitioning' : ''} ${isPaused ? 'is-paused' : ''}`} aria-hidden="true">
+    <div
+      className={`menu-streetview ${isPaused ? 'is-paused' : ''}`}
+      style={{
+        '--menu-pano-rotation-duration': `${BACKGROUND_ROTATION_DURATION_MS}ms`,
+        '--menu-pano-crossfade-duration': `${BACKGROUND_CROSSFADE_DURATION_MS}ms`,
+      }}
+      aria-hidden="true"
+    >
       <div className="menu-pano-layers">
         <img
           src={urlA || undefined}
@@ -173,7 +188,6 @@ export function MenuStreetViewBackground() {
         />
       </div>
       {!ready && <div className="menu-pano-placeholder" />}
-      <div className="menu-pano-blackout" />
       <div className="menu-streetview-shade" />
     </div>
   );
