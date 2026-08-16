@@ -36,6 +36,9 @@ export default function GameOverOverlay({
   totalRondas = 5,
   isMultiplayer = false,
   isHost = true,
+  revanchaSolicitada = false,
+  revanchaSolicitudes = 0,
+  revanchaTotalJugadores = 0,
   onRematch,
   onMainMenu,
 }) {
@@ -148,13 +151,14 @@ export default function GameOverOverlay({
         {/* Action Buttons */}
         <div className="game-over-actions">
           {isMultiplayer ? (
-            isHost ? (
-              <button className="btn-primary btn-large" onClick={onRematch}>
-                <RefreshCw size={20} /> Revancha
+            <>
+              <button className="btn-primary btn-large" onClick={onRematch} disabled={revanchaSolicitada}>
+                <RefreshCw size={20} /> {revanchaSolicitada ? 'Revancha solicitada' : 'Solicitar revancha'}
               </button>
-            ) : (
-              <div className="waiting-host-rematch">Esperando a que el host inicie la revancha...</div>
-            )
+              <div className="waiting-host-rematch">
+                {revanchaSolicitudes} / {revanchaTotalJugadores} jugadores aceptaron la revancha
+              </div>
+            </>
           ) : (
             <button className="btn-primary btn-large" onClick={onRematch}>
               <RefreshCw size={20} /> Jugar de Nuevo
