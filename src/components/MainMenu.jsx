@@ -5,7 +5,7 @@ import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
 // Cambia este valor para acelerar o ralentizar el giro suave del mismo panorama.
-const BACKGROUND_ROTATION_DEGREES_PER_SECOND = 6;
+const BACKGROUND_ROTATION_DEGREES_PER_SECOND = 2;
 // Zoom 3 is 32 tiles instead of 128 at zoom 4, with enough detail for the menu.
 const PANO_TILE_ZOOM_LARGE = 3;
 const PANO_TILE_ZOOM_SMALL = 2;
