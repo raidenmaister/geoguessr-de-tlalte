@@ -59,6 +59,7 @@ try {
 }
 
 const PANOS_VALIDOS = new Set(COORDENADAS.map((c) => c.pano_id).filter(Boolean));
+let ultimoErrorTileLog = 0;
 
 function descargarTileConHttps(url) {
   return new Promise((resolve, reject) => {
@@ -267,37 +268,51 @@ app.get("/streetview-tile", async (req, res) => {
     return res.status(400).json({ error: "Tile fuera de rango" });
   }
 
-  const url = `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
-  try {
-    let status;
-    let contentType;
-    let buf;
+  const query = `panoid=${encodeURIComponent(pano)}&x=${x}&y=${y}&zoom=${zoom}`;
+  const urls = [
+    `https://streetviewpixels-pa.googleapis.com/v1/tile?cb_client=maps_sv.tactile&${query}`,
+    `https://geo0.ggpht.com/cbk?cb_client=maps_sv.tactile&authuser=0&hl=en&gl=us&output=tile&${query}`,
+    `https://geo1.ggpht.com/cbk?cb_client=maps_sv.tactile&authuser=0&hl=en&gl=us&output=tile&${query}`,
+  ];
+  const headers = {
+    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "Referer": "https://www.google.com/",
+    "User-Agent": "Mozilla/5.0",
+  };
+  let lastStatus = 502;
+  let lastError = null;
+
+  for (const url of urls) {
     try {
-      const response = await fetch(url, {
-        headers: {
-          "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-          "Referer": "https://www.google.com/",
-          "User-Agent": "Mozilla/5.0",
-        },
-      });
-      status = response.status;
-      contentType = response.headers.get("content-type") || "image/jpeg";
-      buf = Buffer.from(await response.arrayBuffer());
-    } catch (fetchError) {
-      console.warn("⚠️ Fetch de tile falló, reintentando por HTTPS IPv4:", fetchError.message);
-      const fallback = await descargarTileConHttps(url);
-      status = fallback.status;
-      contentType = fallback.contentType;
-      buf = fallback.body;
+      const response = await fetch(url, { headers });
+      if (response.ok) {
+        res.set("Content-Type", response.headers.get("content-type") || "image/jpeg");
+        res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+        return res.send(Buffer.from(await response.arrayBuffer()));
+      }
+      lastStatus = response.status;
+    } catch (error) {
+      lastError = error;
     }
-    if (status < 200 || status >= 300) return res.status(status).json({ error: `Google Street View devolvió ${status}` });
-    res.set("Content-Type", contentType);
-    res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
-    res.send(buf);
-  } catch (err) {
-    console.error("❌ Error al obtener tile de Street View:", err.message);
-    res.status(502).json({ error: "Error al obtener tile de Street View" });
+
+    try {
+      const fallback = await descargarTileConHttps(url);
+      if (fallback.status >= 200 && fallback.status < 300) {
+        res.set("Content-Type", fallback.contentType);
+        res.set("Cache-Control", "public, max-age=86400, stale-while-revalidate=604800");
+        return res.send(fallback.body);
+      }
+      lastStatus = fallback.status;
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  if (lastError && Date.now() - ultimoErrorTileLog > 60000) {
+    ultimoErrorTileLog = Date.now();
+    console.error("❌ No se pudo obtener tiles de Street View:", lastError.message);
+  }
+  res.status(lastStatus >= 400 ? lastStatus : 502).json({ error: "Error al obtener tile de Street View" });
 });
 
 // Compatibilidad con clientes anteriores.
