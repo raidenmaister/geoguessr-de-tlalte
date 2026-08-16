@@ -56,3 +56,9 @@ El script `deploy.mjs`:
 - `dist/` es salida de build (no versionada).
 - `descargar_panos.py` no se versiona.
 - El endpoint `/panorama-fondo` del backend devuelve un `pano_id` aleatorio de Google Maps Street View para el fondo del menú; no requiere la carpeta de panoramas descargados.
+
+## Regla de GitHub para IAs
+
+- No hacer `commit`, `push`, crear PR ni subir cambios a GitHub sin el consentimiento explícito del usuario.
+- Agrupar varios arreglos relacionados o un cambio grande en una sola publicación; no subir cada cambio pequeño por separado.
+- Se pueden editar y validar cambios localmente sin publicarlos, pero antes de cualquier publicación se debe pedir confirmación al usuario.
