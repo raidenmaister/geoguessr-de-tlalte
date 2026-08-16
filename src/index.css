@@ -958,24 +958,37 @@ a[href*="google.com/maps"] {
   justify-content: center;
   height: 100vh;
   width: 100vw;
-  background: var(--bg-main);
+  background: #080b07;
   position: relative;
   overflow: auto;
   padding: 12px;
 }
 
-.screen-menu {
+.screen-username, .screen-menu, .screen-create, .screen-join, .screen-lobby {
   isolation: isolate;
-  background: #10150d;
 }
 
 .menu-streetview,
-.menu-streetview-fade,
 .menu-streetview-shade,
 .menu-pano-canvas,
 .menu-pano-placeholder {
   position: absolute;
   inset: 0;
+}
+
+.menu-pano-blackout {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 450ms ease;
+}
+
+.menu-streetview.is-transitioning .menu-pano-blackout {
+  opacity: 1;
+  transition-duration: 450ms;
 }
 
 .menu-streetview {
@@ -991,12 +1004,33 @@ a[href*="google.com/maps"] {
   z-index: 1;
 }
 
+.menu-pano-layers {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 .menu-pano-canvas {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
   width: 100%;
   height: 100%;
   object-fit: cover;
   user-select: none;
+  filter: blur(1px) saturate(0.98);
+  will-change: transform;
+  opacity: 0;
+  transition: opacity 0.26s ease;
+}
+
+.menu-pano-canvas.is-front {
+  opacity: 1;
+  animation: menu-pano-pan 20s linear infinite alternate;
+}
+
+.menu-streetview.is-paused .menu-pano-canvas.is-front {
+  animation-play-state: paused;
 }
 
 .menu-pano-placeholder {
@@ -1004,17 +1038,9 @@ a[href*="google.com/maps"] {
   background: radial-gradient(ellipse at 50% 35%, #1c2a1e 0%, #0a0f0a 70%, #050805 100%);
 }
 
-.menu-streetview-fade {
-  z-index: 2;
-  background: #000;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 1.2s ease;
-}
-
-.menu-streetview-fade.menu-streetview-black {
-  opacity: 1;
-  transition: opacity 1.2s ease;
+@keyframes menu-pano-pan {
+  0% { transform: scale(1.08) translateX(2%); }
+  100% { transform: scale(1.16) translateX(-2%); }
 }
 
 .menu-streetview-shade {
@@ -3101,11 +3127,6 @@ a[href*="google.com/maps"] {
 .screen-lobby,
 .screen-username {
   background: var(--bg-main);
-}
-
-.menu-streetview-shade {
-  background: linear-gradient(180deg, rgba(13, 21, 18, 0.22), rgba(13, 21, 18, 0.86)),
-    repeating-linear-gradient(0deg, rgba(217, 207, 184, 0.028) 0 1px, transparent 1px 5px);
 }
 
 .btn-primary,

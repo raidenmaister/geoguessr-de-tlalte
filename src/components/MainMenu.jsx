@@ -4,128 +4,176 @@ import { conectar, SERVER_URL } from '../services/client';
 import MenuMusic from './MenuMusic';
 
 const PANO_INTERVAL_MS = 20000;
-const FADE_OUT_MS = 1300;
-const FADE_IN_MS = 700;
-const ROTATION_STEP_DEG = 6; // grados que avanza cada refresco del fondo
-const ROTATION_REFRESH_MS = 5000;
+const TRANSITION_MS = 900;
 
 function buildStreetViewUrl(panoId, heading) {
   const params = new URLSearchParams({
     pano: panoId,
     heading: String(Math.round(((heading % 360) + 360) % 360)),
     pitch: '0',
-    fov: '75',
-    w: '1280',
-    h: '720',
+    fov: '100',
+    w: '640',
+    h: '640',
   });
   return `${SERVER_URL}/streetview?${params.toString()}`;
 }
 
 export function MenuStreetViewBackground() {
-  const imgRef = useRef(null);
-  const [imgUrl, setImgUrl] = useState(null);
-  const [fading, setFading] = useState(false);
+  const [urlA, setUrlA] = useState(null);
+  const [urlB, setUrlB] = useState(null);
+  const [front, setFront] = useState('a');
   const [ready, setReady] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     let active = true;
-    let rotationTimer = null;
     let swapTimer = null;
-    let fadeTimer = null;
-    const panoRef = { id: null, heading: 0 };
+    let transitionTimer = null;
+    let controller = null;
+    const stateRef = { front: 'a', panoId: null, paused: document.hidden || !document.hasFocus() };
 
     const loadPanoId = async () => {
+      controller?.abort();
+      controller = new AbortController();
       try {
-        const response = await fetch(`${SERVER_URL}/panorama-fondo`, { cache: 'no-store' });
+        const response = await fetch(`${SERVER_URL}/panorama-fondo`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         return data.pano_id;
       } catch (error) {
+        if (error.name === 'AbortError') return null;
         console.warn('No se pudo cargar el pano de fondo:', error);
         return null;
       }
     };
 
-    const applyPanoImage = () => {
-      if (!active || !panoRef.id || document.hidden) return;
-      setImgUrl(buildStreetViewUrl(panoRef.id, panoRef.heading));
-      setReady(true);
-    };
+    const buildBackgroundUrl = (panoId) => buildStreetViewUrl(panoId, Math.floor(Math.random() * 360));
 
-    // Avanza el heading y recarga la imagen de fondo suavemente.
-    const startTimers = () => {
-      if (rotationTimer) return;
-      rotationTimer = window.setInterval(() => {
-        if (!active || !panoRef.id) return;
-        panoRef.heading = (panoRef.heading + ROTATION_STEP_DEG) % 360;
-        applyPanoImage();
-      }, ROTATION_REFRESH_MS);
+    const preloadImage = (url) => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(url);
+      image.onerror = reject;
+      image.src = url;
+    });
 
-      swapTimer = window.setInterval(async () => {
-        const panoId = await loadPanoId();
-        if (!active || !panoId || document.hidden) return;
-        setFading(true);
-        fadeTimer = window.setTimeout(() => {
-          if (!active) return;
-          panoRef.id = panoId;
-          panoRef.heading = Math.floor(Math.random() * 360);
-          applyPanoImage();
-          fadeTimer = window.setTimeout(() => {
-            if (active) setFading(false);
-          }, FADE_IN_MS);
-        }, FADE_OUT_MS);
-      }, PANO_INTERVAL_MS);
-    };
-
-    const stopTimers = () => {
-      if (rotationTimer) {
-        window.clearInterval(rotationTimer);
-        rotationTimer = null;
+    const showImage = (url, initial = false) => {
+      if (!active || stateRef.paused) return;
+      const next = stateRef.front === 'a' ? 'b' : 'a';
+      stateRef.front = next;
+      if (next === 'a') {
+        setUrlA(url);
+      } else {
+        setUrlB(url);
       }
+      setFront(next);
+      if (!initial) {
+        setIsTransitioning(true);
+        window.clearTimeout(transitionTimer);
+        transitionTimer = window.setTimeout(() => {
+          if (active) setIsTransitioning(false);
+        }, TRANSITION_MS);
+      }
+    };
+
+    const loadNextPano = async () => {
+      if (!active || stateRef.paused) return;
+      const panoId = await loadPanoId();
+      if (!active || stateRef.paused || !panoId) return;
+      const url = buildBackgroundUrl(panoId);
+      try {
+        await preloadImage(url);
+        if (!active || stateRef.paused) return;
+        stateRef.panoId = panoId;
+        showImage(url);
+      } catch {
+        // Se conserva la imagen actual si Google no entrega la siguiente.
+      }
+    };
+
+    const startTimer = () => {
+      if (swapTimer || stateRef.paused) return;
+      swapTimer = window.setInterval(loadNextPano, PANO_INTERVAL_MS);
+    };
+
+    const stopTimer = () => {
       if (swapTimer) {
         window.clearInterval(swapTimer);
         swapTimer = null;
       }
-      if (fadeTimer) {
-        window.clearTimeout(fadeTimer);
-        fadeTimer = null;
-      }
-      setFading(false);
     };
 
-    const onVisibilityChange = () => {
+    const updatePausedState = () => {
       if (!active) return;
-      if (document.hidden) {
-        stopTimers();
-      } else if (panoRef.id) {
-        startTimers();
+      stateRef.paused = document.hidden || !document.hasFocus();
+      setIsPaused(stateRef.paused);
+      if (stateRef.paused) {
+        stopTimer();
+        controller?.abort();
+      } else {
+        if (stateRef.panoId) startTimer();
+        else init();
       }
     };
 
     async function init() {
       const panoId = await loadPanoId();
-      if (!active || !panoId) return;
-      panoRef.id = panoId;
-      panoRef.heading = Math.floor(Math.random() * 360);
-      applyPanoImage();
-      if (!document.hidden) startTimers();
+      if (!active || stateRef.paused || !panoId) return;
+      const url = buildBackgroundUrl(panoId);
+      try {
+        await preloadImage(url);
+        if (!active || stateRef.paused) return;
+        stateRef.panoId = panoId;
+        showImage(url, true);
+        startTimer();
+      } catch {
+        // El placeholder permanece visible si la primera imagen falla.
+      }
     }
 
     init();
-    document.addEventListener('visibilitychange', onVisibilityChange);
+    document.addEventListener('visibilitychange', updatePausedState);
+    window.addEventListener('focus', updatePausedState);
+    window.addEventListener('blur', updatePausedState);
+    document.addEventListener('fullscreenchange', updatePausedState);
 
     return () => {
       active = false;
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      stopTimers();
+      document.removeEventListener('visibilitychange', updatePausedState);
+      window.removeEventListener('focus', updatePausedState);
+      window.removeEventListener('blur', updatePausedState);
+      document.removeEventListener('fullscreenchange', updatePausedState);
+      stopTimer();
+      controller?.abort();
+      window.clearTimeout(transitionTimer);
     };
   }, []);
 
+  const onLoad = () => setReady(true);
+
   return (
-    <div className="menu-streetview" aria-hidden="true">
-      <img ref={imgRef} className="menu-pano-canvas" src={imgUrl || undefined} alt="" draggable={false} />
+    <div className={`menu-streetview ${isTransitioning ? 'is-transitioning' : ''} ${isPaused ? 'is-paused' : ''}`} aria-hidden="true">
+      <div className="menu-pano-layers">
+        <img
+          src={urlA || undefined}
+          alt=""
+          draggable={false}
+          onLoad={onLoad}
+          className={`menu-pano-canvas ${front === 'a' ? 'is-front' : ''}`}
+        />
+        <img
+          src={urlB || undefined}
+          alt=""
+          draggable={false}
+          onLoad={onLoad}
+          className={`menu-pano-canvas ${front === 'b' ? 'is-front' : ''}`}
+        />
+      </div>
       {!ready && <div className="menu-pano-placeholder" />}
-      <div className={`menu-streetview-fade ${fading ? 'menu-streetview-black' : ''}`} />
+      <div className="menu-pano-blackout" />
       <div className="menu-streetview-shade" />
     </div>
   );
