@@ -53,6 +53,7 @@ const COLORES_MARCADOR = [
   { nombre: "Lima",     hex: "#84cc16" },
   { nombre: "Índigo",   hex: "#6366f1" },
 ];
+const EMOTES_PERMITIDOS = new Set(["👍", "😱", "😭", "🔥", "🎯", "👏", "🤡"]);
 
 try { fs.mkdirSync(THUMBS_DIR, { recursive: true }); } catch {}
 
@@ -850,6 +851,7 @@ io.on("connection", (socket) => {
   socket.on("enviar_emote", ({ codigo, emote }) => {
     const sala = salas.get(codigo);
     if (!sala) return;
+    if (typeof emote !== "string" || !EMOTES_PERMITIDOS.has(emote)) return;
 
     const jugador = sala.jugadores.get(socket.id);
     if (!jugador) return;
