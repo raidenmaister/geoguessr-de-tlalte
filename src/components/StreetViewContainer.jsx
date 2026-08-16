@@ -5,6 +5,7 @@ import { SERVER_URL } from '../services/client';
 const TILE_SIZE = 512;
 const TILE_ZOOM_LARGE = 4;
 const TILE_ZOOM_SMALL = 3;
+const TILE_ZOOM_PREVIEW = 2;
 const PANORAMA_FOV_DEG = 75;
 const STREETVIEW_TOKEN = import.meta.env.VITE_STREETVIEW_TOKEN
   ? `&token=${encodeURIComponent(import.meta.env.VITE_STREETVIEW_TOKEN)}`
@@ -50,8 +51,7 @@ async function loadTile(url, signal) {
   }
 }
 
-async function loadPanoramaTiles(panoId, signal) {
-  const zoom = getTileZoom();
+async function loadPanoramaTiles(panoId, signal, zoom = getTileZoom()) {
   const columns = 2 ** zoom;
   const rows = 2 ** (zoom - 1);
   const panorama = document.createElement('canvas');
@@ -181,14 +181,63 @@ export default function StreetViewContainer({
     setStatus('Cargando imagen en alta calidad...');
     readyRef.current = false;
 
-    loadPanoramaTiles(panoId, controller.signal)
-      .then((loadedPanorama) => {
+    const preferredZoom = getTileZoom();
+    const quickZoom = Math.min(preferredZoom, TILE_ZOOM_PREVIEW);
+
+    const publishReadyPanorama = (loadedPanorama) => {
+      if (controller.signal.aborted) return;
+      setPanorama(loadedPanorama);
+      setStatus('Ubicación lista');
+      if (!readyRef.current) {
+        readyRef.current = true;
+        onReady?.();
+      }
+    };
+
+    if (viewMode === 'temporal') {
+      const loadTemporalPanorama = async () => {
+        try {
+          return await loadPanoramaTiles(panoId, controller.signal, preferredZoom);
+        } catch (error) {
+          if (error.name === 'AbortError' || preferredZoom === TILE_ZOOM_SMALL) throw error;
+          return loadPanoramaTiles(panoId, controller.signal, TILE_ZOOM_SMALL);
+        }
+      };
+
+      loadTemporalPanorama()
+        .then(publishReadyPanorama)
+        .catch((error) => {
+          if (error.name === 'AbortError') return;
+          setStatus('Error: Imagen no disponible');
+          setErrorMessage('No se pudo cargar la imagen de Street View en alta calidad.');
+        });
+      return () => controller.abort();
+    }
+
+    loadPanoramaTiles(panoId, controller.signal, quickZoom)
+      .then((quickPanorama) => {
         if (controller.signal.aborted) return;
-        setPanorama(loadedPanorama);
+        setPanorama(quickPanorama);
         setStatus('Ubicación lista');
         if (!readyRef.current) {
           readyRef.current = true;
           onReady?.();
+        }
+
+        if (preferredZoom > quickZoom) {
+          setStatus('Mejorando calidad...');
+          loadPanoramaTiles(panoId, controller.signal, preferredZoom)
+            .then((highQualityPanorama) => {
+              if (!controller.signal.aborted) {
+                setPanorama(highQualityPanorama);
+                setStatus('Ubicación lista');
+              }
+            })
+            .catch((error) => {
+              if (error.name !== 'AbortError') {
+                console.warn('No se pudo mejorar la calidad del panorama:', error);
+              }
+            });
         }
       })
       .catch((error) => {
