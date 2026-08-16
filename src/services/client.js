@@ -10,9 +10,11 @@ import { io } from "socket.io-client";
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000";
 
 let socket = null;
+let wasConnected = false;
+const reconexionListeners = new Set();
 
 export function conectar() {
-  if (socket && socket.connected) return socket;
+  if (socket) return socket;
 
   socket = io(SERVER_URL, {
     transports: ["polling", "websocket"], // Polling primero para asegurar handshake HTTP y auto-upgrading a WSS
@@ -24,6 +26,17 @@ export function conectar() {
 
   socket.on("connect", () => {
     console.log(`🔌 Conectado al servidor: ${socket.id}`);
+    const esReconexion = wasConnected;
+    wasConnected = true;
+    if (esReconexion) {
+      const sessionToken = localStorage.getItem("geoguessr_session_token");
+      const codigo = localStorage.getItem("geoguessr_room_code");
+      if (sessionToken && codigo) {
+        socket.emit("reconectar_sala", { codigo: codigo.toUpperCase(), sessionToken }, (res) => {
+          reconexionListeners.forEach((handler) => handler(res));
+        });
+      }
+    }
   });
 
   socket.on("disconnect", (reason) => {
@@ -45,7 +58,13 @@ export function desconectar() {
   if (socket) {
     socket.disconnect();
     socket = null;
+    wasConnected = false;
   }
+}
+
+export function suscribirReconexion(handler) {
+  reconexionListeners.add(handler);
+  return () => reconexionListeners.delete(handler);
 }
 
 export function crearSala(nombre, totalRondas = 5, duracionPanico = 10, duracionRonda = 0, maxJugadores = 4, esPublica = true, modoVista = 'libre', tiempoVista = 1) {

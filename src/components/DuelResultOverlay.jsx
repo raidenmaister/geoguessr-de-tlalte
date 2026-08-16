@@ -170,10 +170,10 @@ export default function DuelResultOverlay({
 
       playDamageSFX();
       if (esUltimaRonda) {
-        setTimeout(() => playKOSFX(), 400);
+        addTimer(() => playKOSFX(), 400);
       }
 
-      setTimeout(() => {
+      addTimer(() => {
         setShake(false);
         setFlashLeft(false);
         setFlashRight(false);

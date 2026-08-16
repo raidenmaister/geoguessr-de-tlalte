@@ -91,6 +91,7 @@ function GeoGuessrApp() {
   const [totalRondas, setTotalRondas] = useState(5);
   const [puntosAcumulados, setPuntosAcumulados] = useState(0);
   const [currentCoord, setCurrentCoord] = useState(null);
+  const [panoramaLoadKey, setPanoramaLoadKey] = useState(0);
 
   // ═══ DUELOS & EMOTES ═══
   const [esDuelo, setEsDuelo] = useState(false);
@@ -106,6 +107,7 @@ function GeoGuessrApp() {
   const [duracionRondaSec, setDuracionRondaSec] = useState(0);
   const [roundTimeLeft, setRoundTimeLeft] = useState(0);
   const roundTimerRef = useRef(null);
+  const roundStartTimeoutRef = useRef(null);
 
   // Anti-stale closure refs
   const guessCoordsRef = useRef(null);
@@ -165,12 +167,12 @@ function GeoGuessrApp() {
           } else {
             setRonda(res.rondaActual);
             setPuntosAcumulados(res.puntosActuales || 0);
-            if (res.coordActual) setCurrentCoord(res.coordActual);
-            if (res.esDuelo) setEsDuelo(true);
-            setShowPreparing(false);
-            setScreen(SCREEN.PLAYING);
-            socket.reportarListo(res.codigo);
-          }
+             if (res.coordActual) setCurrentCoord(res.coordActual);
+             if (res.esDuelo) setEsDuelo(true);
+             setShowPreparing(false);
+             setScreen(SCREEN.PLAYING);
+             setPanoramaLoadKey((key) => key + 1);
+           }
         } else {
           localStorage.removeItem('geoguessr_session_token');
           localStorage.removeItem('geoguessr_room_code');
@@ -178,6 +180,34 @@ function GeoGuessrApp() {
       });
     }
     return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    return socket.suscribirReconexion((res) => {
+      if (!res.ok) return;
+      setRoomCode(res.codigo);
+      setRoomPlayers(res.jugadores);
+      setRoomHostId(res.hostId);
+      setTotalRondas(res.totalRondas);
+      if (res.maxJugadores != null) setMaxJugadores(res.maxJugadores);
+      setEsPublica(res.esPublica || false);
+      setModoVista(res.modoVista || 'libre');
+      setTiempoVista(res.tiempoVista || 1);
+      setPovHeading(res.povHeading ?? null);
+      setIsMultiplayer(true);
+
+      if (res.estado === 'LOBBY') {
+        setScreen(SCREEN.LOBBY);
+      } else {
+        setRonda(res.rondaActual);
+        setPuntosAcumulados(res.puntosActuales || 0);
+        setCurrentCoord(res.coordActual || null);
+        setEsDuelo(Boolean(res.esDuelo));
+        setShowPreparing(false);
+        setPanoramaLoadKey((key) => key + 1);
+        setScreen(SCREEN.PLAYING);
+      }
+    });
   }, []);
 
   // ═══════════════════════════════════════
@@ -289,7 +319,8 @@ function GeoGuessrApp() {
         setShowPreparing(false);
         const delay = Math.max(0, timestampInicio - Date.now());
 
-         setTimeout(() => {
+          if (roundStartTimeoutRef.current) clearTimeout(roundStartTimeoutRef.current);
+          roundStartTimeoutRef.current = setTimeout(() => {
            if (modoVista === 'temporal') {
              setTemporalVisible(true);
              temporalTimerRef.current = setTimeout(() => setTemporalVisible(false), tiempoVista * 1000);
@@ -310,7 +341,7 @@ function GeoGuessrApp() {
               }
             }, 1000);
           }
-        }, delay);
+         }, delay);
       },
 
       onCuentaRegresivaActivada: ({ segundosRestantes, primerJugador }) => {
@@ -338,10 +369,11 @@ function GeoGuessrApp() {
        onResultadosRonda: ({ ronda: r, totalRondas: tr, coordenadaReal, resultados, esUltimaRonda: eur, esDuelo: duelo, resDuelo }) => {
          setTemporalVisible(false);
          if (temporalTimerRef.current) { clearTimeout(temporalTimerRef.current); temporalTimerRef.current = null; }
-        setPanicActive(false);
-        setActiveEmotes([]);
-        if (panicTimerRef.current) { clearInterval(panicTimerRef.current); panicTimerRef.current = null; }
-        if (roundTimerRef.current) { clearInterval(roundTimerRef.current); roundTimerRef.current = null; }
+         setPanicActive(false);
+         setActiveEmotes([]);
+         if (panicTimerRef.current) { clearInterval(panicTimerRef.current); panicTimerRef.current = null; }
+         if (roundTimerRef.current) { clearInterval(roundTimerRef.current); roundTimerRef.current = null; }
+         if (roundStartTimeoutRef.current) { clearTimeout(roundStartTimeoutRef.current); roundStartTimeoutRef.current = null; }
 
         const myId = socket.getSocketId();
         const miResultado = resultados.find((res) => res.id === myId);
@@ -369,7 +401,8 @@ function GeoGuessrApp() {
         setPanicActive(false);
         setActiveEmotes([]);
         if (panicTimerRef.current) clearInterval(panicTimerRef.current);
-        if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+         if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+         if (roundStartTimeoutRef.current) { clearTimeout(roundStartTimeoutRef.current); roundStartTimeoutRef.current = null; }
         playKOSFX();
 
          setGameOverData({
@@ -422,7 +455,8 @@ function GeoGuessrApp() {
         setPanicActive(false);
         setActiveEmotes([]);
         if (panicTimerRef.current) clearInterval(panicTimerRef.current);
-        if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+       if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+       if (roundStartTimeoutRef.current) clearTimeout(roundStartTimeoutRef.current);
         setRoundResult(null);
         setGameOverData(null);
         setEsDuelo(false);
@@ -433,8 +467,8 @@ function GeoGuessrApp() {
         setIsMultiplayer(false);
         setRoomCode('');
         setRoomHostId(null);
-        localStorage.removeItem('geoguesser_session_token');
-        localStorage.removeItem('geoguesser_room_code');
+         localStorage.removeItem('geoguessr_session_token');
+         localStorage.removeItem('geoguessr_room_code');
         alert(nombre + ' se ha desconectado. Victoria por abandono.');
         setScreen(SCREEN.MENU);
       },
@@ -442,9 +476,10 @@ function GeoGuessrApp() {
 
     return () => {
       cleanup();
-      if (temporalTimerRef.current) clearTimeout(temporalTimerRef.current);
-      if (panicTimerRef.current) clearInterval(panicTimerRef.current);
-      if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+       if (temporalTimerRef.current) clearTimeout(temporalTimerRef.current);
+       if (panicTimerRef.current) clearInterval(panicTimerRef.current);
+       if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+       if (roundStartTimeoutRef.current) clearTimeout(roundStartTimeoutRef.current);
     };
   }, [isMultiplayer, roomCode, duracionRondaSec, modoVista, tiempoVista, socket]);
 
@@ -499,7 +534,7 @@ function GeoGuessrApp() {
 
       setSingleplayerHistory(prev => [...prev, roundRecord]);
 
-      const eur = ronda >= totalRondas;
+       const eur = totalRondas > 0 && ronda >= totalRondas;
       setEsUltimaRonda(eur);
 
       setRoundResult({
@@ -521,7 +556,7 @@ function GeoGuessrApp() {
       socket.siguienteRonda(roomCode);
     } else {
       if (isLoading) return;
-      if (ronda >= totalRondas) {
+       if (totalRondas > 0 && ronda >= totalRondas) {
         playKOSFX();
         setGameOverData({
           ranking: [{ id: 'local', nombre: username || 'Tú', color: { hex: '#c56b49' }, puntosTotal: puntosAcumulados }],
@@ -742,6 +777,7 @@ function GeoGuessrApp() {
 
       {currentCoord ? (
         <StreetViewContainer
+          key={panoramaLoadKey}
           currentCoord={currentCoord}
           viewMode={modoVista}
           panoHeading={isMultiplayer ? povHeading : soloPovHeading}
