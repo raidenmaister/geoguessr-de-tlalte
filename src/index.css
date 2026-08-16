@@ -958,8 +958,9 @@ a[href*="google.com/maps"] {
   justify-content: center;
   height: 100vh;
   width: 100vw;
-  background: #080b07;
+  background: transparent;
   position: relative;
+  z-index: 1;
   overflow: auto;
   padding: 12px;
 }
@@ -977,6 +978,7 @@ a[href*="google.com/maps"] {
 }
 
 .menu-streetview {
+  position: fixed;
   z-index: 0;
   overflow: hidden;
   background: #080b07;

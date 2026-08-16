@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Map, Loader2 } from 'lucide-react';
-import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
 const SOLO_MODES = [
@@ -28,7 +27,6 @@ export default function SoloSetup({ onStart, onBack }) {
 
   return (
     <div className="screen-create">
-      <MenuStreetViewBackground />
       <MenuMusic />
       <div className="screen-card">
         <button onClick={onBack} className="btn-back">

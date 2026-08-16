@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Globe } from 'lucide-react';
 import MenuMusic from './MenuMusic';
-import { MenuStreetViewBackground } from './MainMenu';
 
 export default function UsernameScreen({ onUsernameSet }) {
   const [name, setName] = useState('');
@@ -15,7 +14,6 @@ export default function UsernameScreen({ onUsernameSet }) {
 
   return (
     <div className="screen-username">
-      <MenuStreetViewBackground />
       <MenuMusic />
       <div className="screen-card">
         <Globe size={48} className="globe-icon" />

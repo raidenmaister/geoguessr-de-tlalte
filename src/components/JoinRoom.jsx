@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Loader2, Users, Globe, Lock, RefreshCw } from 'lucide-react';
 import { unirseSala, SERVER_URL } from '../services/client';
-import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
 export default function JoinRoom({ username, onRoomJoined, onBack }) {
@@ -53,7 +52,6 @@ export default function JoinRoom({ username, onRoomJoined, onBack }) {
 
   return (
     <div className="screen-join">
-      <MenuStreetViewBackground />
       <MenuMusic />
       <div className="screen-card">
         <button onClick={onBack} className="btn-back">

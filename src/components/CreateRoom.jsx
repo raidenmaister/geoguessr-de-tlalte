@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { crearSala } from '../services/client';
-import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
 export default function CreateRoom({ username, onRoomCreated, onBack }) {
@@ -44,7 +43,6 @@ export default function CreateRoom({ username, onRoomCreated, onBack }) {
 
   return (
     <div className="screen-create">
-      <MenuStreetViewBackground />
       <MenuMusic />
       <div className="screen-card">
         <button onClick={onBack} className="btn-back">

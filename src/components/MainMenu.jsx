@@ -320,7 +320,6 @@ export default function MainMenu({ username, onCreateRoom, onJoinRoom, onEditUse
   return (
     <div className="screen-menu">
       <MenuMusic />
-      <MenuStreetViewBackground />
       <div className="screen-card">
         <div className="user-profile">
           <span className="player-name">{username}</span>

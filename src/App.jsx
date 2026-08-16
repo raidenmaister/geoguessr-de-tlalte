@@ -18,6 +18,7 @@ import EmotePicker from './components/EmotePicker';
 import EmoteOverlay from './components/EmoteOverlay';
 import DesktopOnlyNotice from './components/DesktopOnlyNotice';
 import SoloSetup from './components/SoloSetup';
+import { MenuStreetViewBackground } from './components/MainMenu';
 import * as socket from './services/client';
 import { Send, Clock } from 'lucide-react';
 import { haversineDistance, calcularPuntos } from './utils/scoring';
@@ -593,12 +594,23 @@ function GeoGuessrApp() {
   // ═══════════════════════════════════════
   //  RENDER
   // ═══════════════════════════════════════
+  const showMenuBackground = [
+    SCREEN.USERNAME,
+    SCREEN.MENU,
+    SCREEN.SOLO_SETUP,
+    SCREEN.CREATE_ROOM,
+    SCREEN.JOIN_ROOM,
+    SCREEN.LOBBY,
+  ].includes(screen);
+  const menuBackground = showMenuBackground ? <MenuStreetViewBackground /> : null;
+
   if (screen === SCREEN.USERNAME) {
-    return <UsernameScreen onUsernameSet={handleUsernameSet} />;
+    return <>{menuBackground}<UsernameScreen onUsernameSet={handleUsernameSet} /></>;
   }
 
   if (screen === SCREEN.MENU) {
-    return (
+    return (<>
+      {menuBackground}
       <MainMenu
         username={username}
         onCreateRoom={() => { socket.conectar(); setScreen(SCREEN.CREATE_ROOM); }}
@@ -606,40 +618,44 @@ function GeoGuessrApp() {
         onEditUsername={() => setScreen(SCREEN.USERNAME)}
         onSinglePlayer={() => setScreen(SCREEN.SOLO_SETUP)}
       />
-    );
+    </>);
   }
 
   if (screen === SCREEN.SOLO_SETUP) {
-    return (
+    return (<>
+      {menuBackground}
       <SoloSetup
         onStart={handleStartSinglePlayer}
         onBack={() => setScreen(SCREEN.MENU)}
       />
-    );
+    </>);
   }
 
   if (screen === SCREEN.CREATE_ROOM) {
-    return (
+    return (<>
+      {menuBackground}
       <CreateRoom
         username={username}
         onRoomCreated={handleRoomCreated}
         onBack={() => setScreen(SCREEN.MENU)}
       />
-    );
+    </>);
   }
 
   if (screen === SCREEN.JOIN_ROOM) {
-    return (
+    return (<>
+      {menuBackground}
       <JoinRoom
         username={username}
         onRoomJoined={handleRoomJoined}
         onBack={() => setScreen(SCREEN.MENU)}
       />
-    );
+    </>);
   }
 
   if (screen === SCREEN.LOBBY) {
-    return (
+    return (<>
+      {menuBackground}
       <Lobby
         roomCode={roomCode}
         players={roomPlayers}
@@ -650,7 +666,7 @@ function GeoGuessrApp() {
         onStartGame={handleStartGame}
         onLeave={handleLeaveLobby}
       />
-    );
+    </>);
   }
 
   if (screen === SCREEN.GAME_OVER && gameOverData) {

@@ -1,6 +1,5 @@
 import React from 'react';
 import { LogOut, Play, Users, Globe, Lock, Loader2 } from 'lucide-react';
-import { MenuStreetViewBackground } from './MainMenu';
 import MenuMusic from './MenuMusic';
 
 export default function Lobby({ roomCode, players = [], isHost, totalRondas, maxJugadores, esPublica = false, onStartGame, onLeave }) {
@@ -10,7 +9,6 @@ export default function Lobby({ roomCode, players = [], isHost, totalRondas, max
 
   return (
     <div className="screen-lobby">
-      <MenuStreetViewBackground />
       <MenuMusic />
       <div className="screen-card">
         <div className="lobby-header">
