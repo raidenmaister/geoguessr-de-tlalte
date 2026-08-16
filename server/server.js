@@ -69,6 +69,7 @@ try {
 }
 
 const PANOS_VALIDOS = new Set(COORDENADAS.map((c) => c.pano_id).filter(Boolean));
+let ultimoErrorTileLog = 0;
 
 function descargarTileConHttps(url) {
   return new Promise((resolve, reject) => {
@@ -427,7 +428,7 @@ app.get("/panorama-fondo", (req, res) => {
 // panorama localmente sin solicitar una nueva perspectiva en cada frame.
 app.get("/streetview-tile",
   middlewareTokenProxy,
-  rateLimitMiddleware(60, 10 * 1000),
+  rateLimitMiddleware(180, 10 * 1000),
   async (req, res) => {
   const pano = typeof req.query.pano === "string" ? req.query.pano.trim() : "";
   const zoom = Number(req.query.zoom);
@@ -453,7 +454,6 @@ app.get("/streetview-tile",
   try {
     const descargarTile = async () => {
       let lastError = 502;
-
       for (const url of urls) {
         try {
           const response = await descargarConLimites(url);
